@@ -238,7 +238,7 @@ export function whisperToLines(chunks, maxLen = 48) {
   let last = '';
   for (const c of chunks || []) {
     const text = String(c.text || '').replace(/\s+/g, ' ').trim();
-    if (!text || HALLUCINATIONS.test(text) || text === last) continue;
+    if (!text || HALLUCINATIONS.test(text) || /^[\[(♪*].*[\])♪*]$/.test(text) || text === last) continue;
     last = text;
     const [s, eRaw] = c.timestamp || [0, null];
     const e = eRaw ?? s + Math.max(1.5, text.length * 0.08);
