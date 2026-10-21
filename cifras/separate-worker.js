@@ -1,7 +1,7 @@
 // Separação de faixas com HTDemucs (ONNX, versão int8 para processador) rodando num worker.
 // Pesos: Meta (licença CC BY-NC 4.0, uso não comercial). Exportação ONNX: HRSadeghi/demucs-onnx (MIT).
 import * as ort from 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.wasm.min.mjs';
-import { Spectrogram, transitionWeight, planChunks } from './demucs-dsp.js?v=10';
+import { Spectrogram, transitionWeight, planChunks } from './demucs-dsp.js?v=11';
 
 const MODEL_URL = 'https://huggingface.co/HRSadeghi/demucs-onnx/resolve/main/htdemucs_int8.onnx';
 const SEGMENT = 343980;

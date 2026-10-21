@@ -1,7 +1,7 @@
 // Reconhecimento de acordes a partir de áudio (arquivo ou microfone), todo no navegador.
 // Carregado só quando o usuário pede.
-import * as M from './music.js?v=10';
-import * as LY from './lyrics.js?v=10';
+import * as M from './music.js?v=11';
+import * as LY from './lyrics.js?v=11';
 
 // ---------------- análise (sem dependência de navegador) ----------------
 
@@ -448,7 +448,7 @@ export function openChordGenerator(ctx) {
     if (!audio) return;
     lyr.status = 'transcribing'; lyr.msg = 'Preparando o áudio…'; renderLyrics();
     try {
-      const W = await import('./whisper.js?v=10');
+      const W = await import('./whisper.js?v=11');
       const a16 = await W.to16k(audio.samples, audio.sampleRate);
       const chunks = await W.transcribe(a16, {
         model: W.MODELS[lyr.model].id, language: lyr.lang,
@@ -588,7 +588,7 @@ export function openChordGenerator(ctx) {
     const msg = d.querySelector('#cg-msg');
     const bar = d.querySelector('#cg-bar');
     try {
-      const S = await import('./separate.js?v=10');
+      const S = await import('./separate.js?v=11');
       const stems = await S.separate(rec.channels, rec.sampleRate, (text, p) => { msg.textContent = text; bar.style.width = (p * 100) + '%'; });
       msg.textContent = 'Encontrando os acordes nas faixas separadas…';
       const { frames, hop } = await analyzeSamples(stems.other, 44100, (p) => { bar.style.width = (p * 100) + '%'; }, stems.bass);
