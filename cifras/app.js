@@ -308,7 +308,7 @@ function viewImport() {
       }
       save();
       importState = { text: '', items: [] };
-      toast('Músicas adicionadas. Abra cada uma para buscar a cifra.');
+      toast('Músicas adicionadas. Use os botões do Cifra Club de cada linha para achar as cifras.');
       location.hash = '#/lista/' + list.id;
     }
   };
@@ -321,13 +321,13 @@ function viewLibrary() {
   app.innerHTML = `
     <h1>Todas as músicas</h1>
     <div class="row" style="margin:12px 0"><input type="search" id="lib-q" placeholder="Buscar por música ou artista" style="flex:1"><a class="btn" href="#/editar/nova">Nova cifra</a></div>
-    <ul class="rows" id="lib-rows"></ul>`;
+    <ul class="rows songs" id="lib-rows"></ul>`;
   const draw = (q = '') => {
     const n = q.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
     const f = songs.filter((s) => `${s.title} ${s.artist}`.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().includes(n));
     $('#lib-rows').innerHTML = f.length ? f.map((s) => `
       <li><a class="main" href="#/cifra/${s.id}"><strong>${esc(s.title)}</strong><small>${esc(s.artist || '—')}${s.content ? '' : ' · sem cifra ainda'}</small></a>
-      ${songKey(s) ? `<span class="keybadge">${esc(songKey(s))}</span>` : ''}</li>`).join('')
+      <span class="ctrls">${songKey(s) ? `<span class="keybadge">${esc(songKey(s))}</span>` : ''}${ccButtons(s)}</span></li>`).join('')
       : '<li><span class="hint">Nada encontrado.</span></li>';
   };
   draw();
@@ -362,7 +362,7 @@ function viewList(list) {
         <button class="btn ghost" data-act="rename">Renomear</button>
         <button class="btn ghost warn" data-act="delete">Excluir lista</button>
       </div>`}
-    ${items.length ? `<ul class="rows${draft ? ' batch' : ''}" id="list-rows">${items.map((it, i) => {
+    ${items.length ? `<ul class="rows songs" id="list-rows">${items.map((it, i) => {
       const s = getSong(it.songId);
       if (!s) return '';
       const k = keyLabel(s, it.shift);
@@ -372,12 +372,13 @@ function viewList(list) {
         <span class="num">${i + 1}</span>
         <a class="main" href="#/cifra/${s.id}?lista=${list.id}"><strong>${esc(s.title)}</strong><small>${esc(s.artist || '—')}${s.content ? '' : ' · sem cifra ainda'}</small></a>
         ${draft ? `<span class="ctrls">
+          ${ccButtons(s)}
           <span class="stepper"><button class="btn" data-act="down" aria-label="Meio tom abaixo">−</button>
           <span class="keybadge" title="Tom original: ${esc(orig || 'não definido')}">${esc(k)}</span>
           <button class="btn" data-act="up" aria-label="Meio tom acima">+</button></span>
           <a class="btn small" href="#/editar/${s.id}?volta=${encodeURIComponent('/lista/' + list.id)}">Editar cifra</a>
           <button class="btn icon ghost" data-act="remove" aria-label="Tirar da lista" title="Tirar da lista">×</button></span>`
-        : `<span class="keybadge">${it.shift && orig ? `<span class="from">${esc(orig)} → </span>` : ''}${esc(k)}</span>`}
+        : `<span class="ctrls"><span class="keybadge">${it.shift && orig ? `<span class="from">${esc(orig)} → </span>` : ''}${esc(k)}</span>${ccButtons(s)}</span>`}
       </li>`;
     }).join('')}</ul>`
     : `<div class="empty"><p>Lista vazia.</p><div class="row" style="justify-content:center"><a class="btn primary" href="#/importar">Importar do YouTube</a><button class="btn" data-act="add">Adicionar da biblioteca</button></div></div>`}
@@ -436,6 +437,13 @@ function viewList(list) {
       default:
     }
   };
+}
+
+/** Atalhos para o Cifra Club direto na linha da lista. */
+function ccButtons(s) {
+  const cc = M.cifraClubLinks(s.artist, s.title);
+  return `${cc.direct ? `<a class="btn small" href="${cc.direct}" target="_blank" rel="noopener" title="Abrir a cifra no Cifra Club">Cifra Club</a>` : ''}
+    <a class="btn small icon" href="${cc.search}" target="_blank" rel="noopener" title="Buscar no Cifra Club" aria-label="Buscar ${esc(s.title)} no Cifra Club">🔍</a>`;
 }
 
 function openExportList(list) {
@@ -549,7 +557,7 @@ function viewSong(song, q) {
           <a class="btn" href="${cc.search}" target="_blank" rel="noopener">Buscar no Cifra Club</a>
           <a class="btn" href="#/editar/${song.id}${list ? '?volta=' + encodeURIComponent('/cifra/' + song.id + '?lista=' + list.id) : ''}">Colar ou escrever a cifra</a>
         </div>
-        <p class="hint" style="margin:14px 0 0">Copie a cifra no Cifra Club e cole no editor: o formato “acordes em cima da letra” é convertido sozinho.</p></div>`}
+        <p class="hint" style="margin:14px 0 0">Copie a cifra no Cifra Club e cole no editor: o formato “acordes em cima da letra” é convertido sozinho. No editor também dá para gerar um rascunho dos acordes por um arquivo de áudio ou pelo microfone.</p></div>`}
     ${list && (prev || next) ? `<nav class="pager">
       ${prev ? `<a href="#/cifra/${prev.id}?lista=${list.id}"><small>← Anterior</small><span>${esc(prev.title)}</span></a>` : '<span style="flex:1"></span>'}
       ${next ? `<a class="next" href="#/cifra/${next.id}?lista=${list.id}"><small>Próxima →</small><span>${esc(next.title)}</span></a>` : '<span style="flex:1"></span>'}
@@ -689,6 +697,9 @@ function viewEditor(id, q) {
 [G]Quando eu digo que dei[D/F#]xei de te amar">${esc(song.content)}</textarea></label>
         <div class="row" style="margin:-6px 0 6px"><button type="button" class="btn small" data-act="convert">Converter “acordes em cima da letra”</button>
           <button type="button" class="btn small ghost" data-act="cc">Buscar no Cifra Club</button></div>
+        <div class="row" style="margin:0 0 6px"><span class="hint">Gerar rascunho dos acordes:</span>
+          <button type="button" class="btn small" data-act="gen-file">Pelo arquivo de áudio</button>
+          <button type="button" class="btn small" data-act="gen-mic">🎤 Pelo microfone</button></div>
         <details class="help"><summary>Como escrever a cifra</summary>
           <p>Acordes vão entre colchetes, logo antes da sílaba: <code>[Am]Tudo [F]bem</code>. Seções: <code>{c: Refrão}</code>. Tablaturas ficam entre <code>{sot}</code> e <code>{eot}</code>.
           Se você colar uma cifra no formato tradicional, com os acordes na linha de cima, ela é convertida sozinha.</p></details>
@@ -754,6 +765,20 @@ function viewEditor(id, q) {
     if (act === 'back' && dirty && !confirm('Sair sem salvar as mudanças desta cifra?')) { e.preventDefault(); return; }
     if (act === 'back') dirty = false;
     if (act === 'guess') { const g = M.guessKey(ta.value); if (g) { form.key.value = g; dirty = true; toast(`Tom sugerido pelo primeiro acorde: ${g}.`); } else toast('Não encontrei acordes para sugerir o tom.'); }
+    if (act === 'gen-file' || act === 'gen-mic') {
+      import('./chords.js').then((c) => c.openChordGenerator({
+        mode: act === 'gen-file' ? 'file' : 'mic',
+        bpm: Number(form.bpm.value) || 80, title: form.title.value, hasContent: !!ta.value.trim(),
+        renderSheet, toast,
+        onApply: ({ text, key, bpm, append }) => {
+          ta.value = append ? ta.value.replace(/\s*$/, '\n\n') + text : text;
+          if (!append || !form.key.value) form.key.value = key;
+          form.bpm.value = bpm;
+          dirty = true; preview();
+          toast('Rascunho inserido. Revise e salve.');
+        },
+      }));
+    }
     if (act === 'convert') { ta.value = M.chordsOverLyricsToChordPro(ta.value); dirty = true; preview(); }
     if (act === 'cc') {
       const cc = M.cifraClubLinks(form.artist.value, form.title.value);

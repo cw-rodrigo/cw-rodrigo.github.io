@@ -108,11 +108,13 @@ select.key { width: auto; min-width: 82px; font-weight: 700; color: var(--chord)
 .rows .handle { cursor: grab; color: var(--muted); padding: 6px 4px; touch-action: none; user-select: none; font-size: 1.2rem; }
 .rows .thumb { width: 72px; aspect-ratio: 16/9; object-fit: cover; border-radius: var(--radius-s); background: var(--line); flex: none; }
 .rows li.ghost { opacity: .4; }
-.rows .ctrls { display: inline-flex; align-items: center; gap: 8px; }
+.rows .ctrls { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.rows .btn.small.icon { width: 32px; }
 @media (max-width: 640px) {
-  .rows.batch > li { flex-wrap: wrap; }
-  .rows.batch .main { flex-basis: calc(100% - 80px); }
-  .rows.batch .ctrls { flex-basis: 100%; padding-left: 52px; }
+  .rows.songs > li { flex-wrap: wrap; row-gap: 8px; }
+  .rows.songs .main { flex-basis: calc(100% - 80px); }
+  .rows.songs .ctrls { flex-basis: 100%; padding-left: 52px; }
+  #lib-rows .ctrls { padding-left: 4px; }
 }
 .rows li.sel { background: var(--chord-soft); }
 
