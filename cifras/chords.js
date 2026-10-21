@@ -1,6 +1,6 @@
 // Reconhecimento de acordes a partir de áudio (arquivo ou microfone), todo no navegador.
 // Carregado só quando o usuário pede.
-import * as M from './music.js?v=3';
+import * as M from './music.js?v=4';
 
 // ---------------- análise (sem dependência de navegador) ----------------
 
@@ -230,11 +230,12 @@ export async function analyzeSamples(samples, sampleRate, onProgress = () => {})
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-class MicChords {
-  async start(onFrame) {
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+class StreamChords {
+  /** Analisa um MediaStream em tempo real. `getTime()` dá o tempo da música (padrão: tempo decorrido). */
+  async start(stream, onFrame, getTime = null) {
+    this.stream = stream;
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const src = this.ctx.createMediaStreamSource(this.stream);
+    const src = this.ctx.createMediaStreamSource(stream);
     this.an = this.ctx.createAnalyser();
     this.an.fftSize = 16384;
     this.an.smoothingTimeConstant = 0;
@@ -251,7 +252,8 @@ class MicChords {
       this.an.getFloatTimeDomainData(time);
       let e = 0;
       for (const v of time) e += v * v;
-      const frame = { t: (performance.now() - this.t0) / 1000, chroma: chromaFromMags(mags, binHz), energy: Math.sqrt(e / time.length) };
+      const t = getTime ? getTime() : (performance.now() - this.t0) / 1000;
+      const frame = { t, chroma: chromaFromMags(mags, binHz), energy: Math.sqrt(e / time.length) };
       this.frames.push(frame);
       onFrame(frame, this.frames);
     }, 100);
@@ -262,6 +264,24 @@ class MicChords {
     this.ctx?.close();
     return this.frames || [];
   }
+}
+
+/** O navegador consegue capturar o áudio da própria aba? (Chrome/Edge no computador) */
+export function canCaptureTab() {
+  return !!navigator.mediaDevices?.getDisplayMedia && !/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+}
+
+/** Pede para compartilhar o áudio desta aba, sem tocar o som nos alto-falantes. */
+async function captureThisTab() {
+  const stream = await navigator.mediaDevices.getDisplayMedia({
+    video: { displaySurface: 'browser' },
+    audio: { suppressLocalAudioPlayback: true, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    preferCurrentTab: true, selfBrowserSurface: 'include', systemAudio: 'include', surfaceSwitching: 'exclude',
+  });
+  stream.getVideoTracks().forEach((t) => t.stop());
+  const audio = stream.getAudioTracks();
+  if (!audio.length) throw Object.assign(new Error('sem áudio'), { name: 'NoAudio' });
+  return new MediaStream(audio);
 }
 
 /**
@@ -276,23 +296,33 @@ export function openChordGenerator(ctx) {
   let audioUrl = null;
   let result = null; // { key, segments }
   let bpm = ctx.bpm || 80;
-  const cleanup = () => { mic?.stop(); mic = null; if (audioUrl) URL.revokeObjectURL(audioUrl); };
+  let follow = null;
+  const cleanup = () => {
+    mic?.stop(); mic = null; clearInterval(follow);
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    if (tabRun) tabRun.finish(true);
+  };
+  let tabRun = null;
   d.addEventListener('close', () => { cleanup(); d.remove(); });
 
   const intro = ctx.mode === 'file'
     ? `<p>Escolha um arquivo de áudio (MP3, M4A, WAV…) de <strong>${esc(ctx.title || 'a música')}</strong>. A análise acontece no seu aparelho; o arquivo não é enviado para lugar nenhum.</p>
        <label class="btn primary">Escolher arquivo de áudio<input type="file" accept="audio/*,video/mp4" data-x="file" hidden></label>`
-    : `<p>Deixe a música tocar perto do microfone, ou toque você mesmo. Os acordes vão sendo anotados enquanto você ouve; pare quando a música acabar.</p>
+    : ctx.mode === 'tab'
+      ? `<p>O vídeo de <strong>${esc(ctx.title || 'a música')}</strong> toca no player do site em velocidade 2x (o tom não muda) e o app escuta o áudio desta aba. Nada é baixado.</p>
+         <p class="hint">O navegador vai pedir para compartilhar esta aba: deixe marcada a opção de <strong>compartilhar o áudio da guia</strong>. O som fica mudo enquanto analisa.</p>
+         <button class="btn primary" data-x="tab-start">Analisar o vídeo</button>`
+      : `<p>Deixe a música tocar perto do microfone, ou toque você mesmo. Os acordes vão sendo anotados enquanto você ouve; pare quando a música acabar.</p>
        <button class="btn primary" data-x="mic-start">Começar a ouvir</button>`;
 
   d.innerHTML = `
-    <h2>${ctx.mode === 'file' ? 'Gerar cifra pelo arquivo de áudio' : 'Gerar cifra pelo microfone'}</h2>
+    <h2>${{ file: 'Gerar cifra pelo arquivo de áudio', tab: 'Gerar cifra pelo vídeo', mic: 'Gerar cifra pelo microfone' }[ctx.mode]}</h2>
     <div id="cg-start">${intro}</div>
     <div id="cg-work" hidden>
       <p id="cg-msg" class="hint"></p>
       <div class="meter"><i id="cg-bar"></i></div>
       <div id="cg-live" hidden><div class="detected" id="cg-now">—</div><p class="hint">Tempo: <span id="cg-time">0:00</span></p>
-        <button class="btn primary" data-x="mic-stop">Parar e gerar a cifra</button></div>
+        <button class="btn primary" data-x="${ctx.mode === 'tab' ? 'tab-stop' : 'mic-stop'}">Parar e gerar a cifra</button></div>
     </div>
     <div id="cg-result" hidden></div>
     <p class="hint" style="margin-top:14px">O resultado é um rascunho só com os acordes (sem a letra). Funciona melhor com gravações limpas, poucos instrumentos e sem muita distorção. Confira e corrija no editor.</p>
@@ -315,13 +345,25 @@ export function openChordGenerator(ctx) {
         <label class="field" style="margin:0"><span>Andamento (BPM)</span><input type="number" id="cg-bpm" min="30" max="260" value="${bpm}" style="width:100px"></label>
         <p class="hint" style="margin:0;flex:1 1 200px">Acordes encontrados: ${distinct.map(esc).join(', ')}. O BPM só define quantos acordes vão em cada linha.</p>
       </div>
-      ${audioUrl ? `<div style="margin:14px 0"><audio controls src="${audioUrl}" style="width:100%" id="cg-audio"></audio>
-        <p>Acorde agora: <strong id="cg-follow" style="color:var(--chord);font-size:1.4rem">—</strong></p></div>` : ''}
+      ${audioUrl ? `<div style="margin:14px 0"><audio controls src="${audioUrl}" style="width:100%" id="cg-audio"></audio></div>` : ''}
+      ${audioUrl || ctx.mode === 'tab' ? `<p>Acorde agora: <strong id="cg-follow" style="color:var(--chord);font-size:1.4rem">—</strong>
+        ${ctx.mode === 'tab' ? '<span class="hint"> — dê play no vídeo do player para conferir de ouvido.</span>' : ''}</p>` : ''}
       <div class="sheet" style="max-height:40vh;overflow:auto;margin:12px 0">${ctx.renderSheet(text)}</div>
       <div class="row">
         <button class="btn primary" data-x="apply">${ctx.hasContent ? 'Substituir a cifra atual' : 'Usar esta cifra'}</button>
         ${ctx.hasContent ? '<button class="btn" data-x="append">Adicionar ao fim da cifra</button>' : ''}
       </div>`;
+    const segAt = (t) => result.segments.find((x) => t >= x.start && t < x.end);
+    clearInterval(follow);
+    if (ctx.mode === 'tab' && ctx.player) {
+      follow = setInterval(() => {
+        const el = d.querySelector('#cg-follow');
+        const p = ctx.player.api();
+        if (!el || !p?.getCurrentTime) return;
+        const s = segAt(p.getCurrentTime());
+        el.textContent = s && s.chord !== 'N' ? s.chord : '—';
+      }, 200);
+    }
     const audio = d.querySelector('#cg-audio');
     if (audio) {
       audio.ontimeupdate = () => {
@@ -360,6 +402,57 @@ export function openChordGenerator(ctx) {
     }
   };
 
+  async function startTab() {
+    if (!canCaptureTab()) { ctx.toast('Capturar o áudio da aba só funciona no Chrome ou Edge do computador.'); return; }
+    let stream;
+    try {
+      // abre o vídeo no player do site (parado) antes de pedir a captura
+      await ctx.player.play(ctx.song, { autoplay: false });
+      stream = await captureThisTab();
+    } catch (err) {
+      ctx.toast(err.name === 'NoAudio' ? 'O áudio não foi compartilhado. Tente de novo e deixe marcada a opção de compartilhar o áudio da guia.'
+        : err.name === 'NotAllowedError' ? 'Compartilhamento cancelado.' : (err.message || 'Não foi possível capturar o áudio da aba.'));
+      return;
+    }
+    const p = ctx.player.api();
+    show('cg-work');
+    d.querySelector('#cg-live').hidden = false;
+    d.querySelector('#cg-msg').textContent = 'Analisando o vídeo em 2x… pode deixar esta janela aberta.';
+    const bar = d.querySelector('#cg-bar');
+    const rates = p.getAvailablePlaybackRates?.() || [1];
+    const rate = rates.includes(2) ? 2 : Math.max(...rates);
+    mic = new StreamChords();
+    let done = false;
+    tabRun = {
+      finish: (aborted) => {
+        if (done) return;
+        done = true;
+        ctx.player.setOnEnded(null);
+        try { p.pauseVideo(); p.setPlaybackRate(1); } catch { /* ok */ }
+        const frames = mic ? mic.stop() : [];
+        mic = null; tabRun = null;
+        if (aborted || !d.open) return;
+        if (frames.length < 20) { show('cg-start'); ctx.toast('Ouvi muito pouco do vídeo. Confira se o áudio da guia foi compartilhado.'); return; }
+        result = framesToChords(frames, { hop: 0.1 * rate });
+        drawResult();
+      },
+    };
+    stream.getAudioTracks()[0].addEventListener('ended', () => tabRun?.finish(false));
+    ctx.player.setOnEnded(() => tabRun?.finish(false));
+    const dur = p.getDuration?.() || 0;
+    await mic.start(stream, (frame, frames) => {
+      if (dur) bar.style.width = Math.min(100, (frame.t / dur) * 100) + '%';
+      d.querySelector('#cg-time').textContent = `${mmss(frame.t)}${dur ? ' de ' + mmss(dur) : ''}`;
+      if (frame.energy < 0.004) return;
+      const avg = new Array(12).fill(0);
+      frames.slice(-4).forEach((f) => f.chroma.forEach((v, i) => { avg[i] += v; }));
+      d.querySelector('#cg-now').textContent = chordName(classify(avg).label);
+    }, () => p.getCurrentTime?.() || 0);
+    p.seekTo(0, true);
+    p.setPlaybackRate(rate);
+    p.playVideo();
+  }
+
   d.onclick = async (e) => {
     const x = e.target.closest('[data-x]')?.dataset.x;
     if (x === 'close') d.close();
@@ -369,9 +462,10 @@ export function openChordGenerator(ctx) {
       d.querySelector('#cg-msg').textContent = 'Ouvindo… o acorde mostrado é o que está soando agora.';
       d.querySelector('#cg-live').hidden = false;
       const bar = d.querySelector('#cg-bar');
-      mic = new MicChords();
+      mic = new StreamChords();
       try {
-        await mic.start((frame, frames) => {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+        await mic.start(stream, (frame, frames) => {
           bar.style.width = Math.min(100, frame.energy * 800) + '%';
           d.querySelector('#cg-time').textContent = mmss(frame.t);
           const recent = frames.slice(-6);
@@ -385,6 +479,8 @@ export function openChordGenerator(ctx) {
         ctx.toast(err.name === 'NotAllowedError' ? 'Permita o uso do microfone para gerar a cifra.' : 'Não foi possível usar o microfone.');
       }
     }
+    if (x === 'tab-start') await startTab();
+    if (x === 'tab-stop' && tabRun) tabRun.finish(false);
     if (x === 'mic-stop' && mic) {
       const frames = mic.stop();
       mic = null;
@@ -397,5 +493,6 @@ export function openChordGenerator(ctx) {
       d.close();
     }
   };
-  d.showModal();
+  // No modo vídeo a janela não pode cobrir o player do YouTube: abre ao lado, sem fundo escuro.
+  if (ctx.mode === 'tab') { d.classList.add('side'); d.show(); } else d.showModal();
 }

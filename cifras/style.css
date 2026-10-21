@@ -270,3 +270,28 @@ dialog.wide { width: min(980px, calc(100vw - 16px)); }
   #print .sheet .ch { color: #000; }
   #print .sheet .section::before { background: #000; }
 }
+
+/* Player fixo do YouTube (mínimo de 200 × 200 px exigido pelo YouTube) */
+.dock {
+  position: fixed; right: 12px; bottom: 12px; z-index: 60;
+  width: min(380px, calc(100vw - 24px));
+  background: var(--sheet); border: 1px solid var(--line); border-radius: var(--radius-l);
+  box-shadow: 0 10px 30px rgb(0 0 0 / .22); overflow: hidden;
+}
+.dock-bar { display: flex; align-items: center; gap: 2px; padding: 6px 6px 6px 12px; }
+.dock-title { flex: 1; min-width: 0; line-height: 1.25; }
+.dock-title strong, .dock-title small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-title small { color: var(--muted); font-size: .82rem; }
+.dock-video { aspect-ratio: 16 / 9; min-height: 200px; background: #000; }
+.dock-video iframe { width: 100%; height: 100%; border: 0; display: block; }
+body.has-dock main { padding-bottom: 340px; }
+body.stage-open .dock { top: 12px; bottom: auto; }
+.rows li.playing { background: var(--chord-soft); }
+.rows li.playing .main strong::before { content: "♪ "; color: var(--chord); }
+dialog.side {
+  position: fixed; inset: 64px auto auto 12px; margin: 0; z-index: 55;
+  width: min(640px, calc(100vw - 24px)); max-height: calc(100vh - 80px); overflow: auto;
+  box-shadow: 0 10px 30px rgb(0 0 0 / .22);
+}
+@media (min-width: 900px) { dialog.side { width: min(640px, calc(100vw - 420px)); } }
+@media (max-width: 899px) { body.has-dock dialog.side { max-height: calc(100vh - 340px); } }

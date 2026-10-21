@@ -1,5 +1,8 @@
-import * as M from './music.js?v=3';
-import { toast, loadScript } from './util.js?v=3';
+import * as M from './music.js?v=4';
+import { toast, loadScript } from './util.js?v=4';
+import * as P from './player.js?v=4';
+
+const CAN_TAB = !!navigator.mediaDevices?.getDisplayMedia && !/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
 
 // ---------- utilidades ----------
 const $ = (s, el = document) => el.querySelector(s);
@@ -307,13 +310,18 @@ function viewLibrary() {
     const n = q.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
     const f = songs.filter((s) => `${s.title} ${s.artist}`.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().includes(n));
     $('#lib-rows').innerHTML = f.length ? f.map((s) => `
-      <li><a class="main" href="#/cifra/${s.id}"><strong>${esc(s.title)}</strong><small>${esc(s.artist || '—')}${s.content ? '' : ' · sem cifra ainda'}</small></a>
-      <span class="ctrls">${songKey(s) ? `<span class="keybadge">${esc(songKey(s))}</span>` : ''}${ccButtons(s)}</span></li>`).join('')
+      <li data-song="${s.id}"><a class="main" href="#/cifra/${s.id}"><strong>${esc(s.title)}</strong><small>${esc(s.artist || '—')}${s.content ? '' : ' · sem cifra ainda'}</small></a>
+      <span class="ctrls">${songKey(s) ? `<span class="keybadge">${esc(songKey(s))}</span>` : ''}${playButton(s)}${ccButtons(s)}</span></li>`).join('')
       : '<li><span class="hint">Nada encontrado.</span></li>';
   };
   draw();
-  $('#lib-q').oninput = (e) => draw(e.target.value);
-  app.onclick = null; app.oninput = null; app.onchange = null;
+  markPlaying();
+  $('#lib-q').oninput = (e) => { draw(e.target.value); markPlaying(); };
+  app.oninput = null; app.onchange = null;
+  app.onclick = (e) => {
+    const b = e.target.closest('[data-act="play"]');
+    if (b) P.play(getSong(b.dataset.song));
+  };
 }
 
 // ---------- lista ----------
@@ -348,23 +356,24 @@ function viewList(list) {
       if (!s) return '';
       const k = keyLabel(s, it.shift);
       const orig = songKey(s);
-      return `<li data-i="${i}">
+      return `<li data-i="${i}" data-song="${s.id}">
         <span class="handle" aria-hidden="true">⠿</span>
         <span class="num">${i + 1}</span>
         <a class="main" href="#/cifra/${s.id}?lista=${list.id}"><strong>${esc(s.title)}</strong><small>${esc(s.artist || '—')}${s.content ? '' : ' · sem cifra ainda'}</small></a>
         ${draft ? `<span class="ctrls">
-          ${ccButtons(s)}
+          ${playButton(s)}${ccButtons(s)}
           <span class="stepper"><button class="btn" data-act="down" aria-label="Meio tom abaixo">−</button>
           <span class="keybadge" title="Tom original: ${esc(orig || 'não definido')}">${esc(k)}</span>
           <button class="btn" data-act="up" aria-label="Meio tom acima">+</button></span>
           <a class="btn small" href="#/editar/${s.id}?volta=${encodeURIComponent('/lista/' + list.id)}">Editar cifra</a>
           <button class="btn icon ghost" data-act="remove" aria-label="Tirar da lista" title="Tirar da lista">×</button></span>`
-        : `<span class="ctrls"><span class="keybadge">${it.shift && orig ? `<span class="from">${esc(orig)} → </span>` : ''}${esc(k)}</span>${ccButtons(s)}</span>`}
+        : `<span class="ctrls"><span class="keybadge">${it.shift && orig ? `<span class="from">${esc(orig)} → </span>` : ''}${esc(k)}</span>${playButton(s)}${ccButtons(s)}</span>`}
       </li>`;
     }).join('')}</ul>`
     : `<div class="empty"><p>Lista vazia.</p><div class="row" style="justify-content:center"><a class="btn primary" href="#/importar">Importar do YouTube</a><button class="btn" data-act="add">Adicionar da biblioteca</button></div></div>`}
     <dialog id="dlg"></dialog>`;
 
+  markPlaying();
   const editItems = () => (db.drafts[list.id] ? db.drafts[list.id].items : list.items);
   const persist = () => { save(); viewList(list); };
 
@@ -403,6 +412,11 @@ function viewList(list) {
     const i = Number(btn.closest('li[data-i]')?.dataset.i);
     const arr = editItems();
     switch (act) {
+      case 'play': {
+        const queue = list.items.map((x) => getSong(x.songId)).filter((x) => x && x.ytId);
+        P.play(getSong(btn.dataset.song), { queue });
+        break;
+      }
       case 'batch': db.drafts[list.id] = { items: list.items.map((x) => ({ ...x })), startedAt: Date.now() }; persist(); break;
       case 'commit': list.items = db.drafts[list.id].items; delete db.drafts[list.id]; persist(); toast('Alterações salvas na lista.'); break;
       case 'discard': if (confirm('Descartar as alterações em lote desta lista?')) { delete db.drafts[list.id]; persist(); } break;
@@ -421,6 +435,16 @@ function viewList(list) {
 }
 
 /** Atalhos para o Cifra Club direto na linha da lista. */
+function playButton(s) {
+  return s.ytId ? `<button class="btn small icon" data-act="play" data-song="${s.id}" aria-label="Ouvir ${esc(s.title)}" title="Ouvir / ver o vídeo">▶</button>` : '';
+}
+/** Destaca a linha da música que está tocando no player. */
+function markPlaying() {
+  const cur = P.current();
+  $$('li[data-song]').forEach((li) => li.classList.toggle('playing', !!cur && li.dataset.song === cur.id));
+}
+P.onChange(markPlaying);
+
 function ccButtons(s) {
   const cc = M.cifraClubLinks(s.artist, s.title);
   return `${cc.direct ? `<a class="btn small" href="${cc.direct}" target="_blank" rel="noopener" title="Abrir a cifra no Cifra Club">Cifra Club</a>` : ''}
@@ -519,7 +543,7 @@ function viewSong(song, q) {
     ${list && item && view.shift !== savedShift ? `<div class="banner info"><p>Este tom ainda não está salvo na lista${draft ? ' (rascunho da edição em lote)' : ''}.</p><button class="btn small primary" data-act="save-shift">Usar ${esc(shown)} na lista</button></div>` : ''}
     ${!list && view.shift && orig ? `<div class="banner info"><p>Você está vendo a cifra em ${esc(shown)}; o original é ${esc(orig)}.</p><button class="btn small" data-act="fix-key">Tornar ${esc(shown)} o tom original</button></div>` : ''}
     <div class="toolbar">
-      ${song.ytId ? `<button class="btn" data-act="video" aria-pressed="${view.video}">${view.video ? 'Esconder vídeo' : '▶ Vídeo'}</button>` : ''}
+      ${song.ytId ? '<button class="btn" data-act="video">▶ Ouvir / vídeo</button>' : ''}
       <a class="btn" href="#/editar/${song.id}${list ? '?volta=' + encodeURIComponent('/cifra/' + song.id + '?lista=' + list.id) : ''}">Editar</a>
       <button class="btn" data-act="cc">Cifra Club</button>
       <button class="btn" data-act="stage" ${song.content ? '' : 'disabled'}>Modo rolagem</button>
@@ -530,13 +554,13 @@ function viewSong(song, q) {
       <button class="btn icon ghost" data-act="smaller" aria-label="Diminuir letra">A−</button>
       <button class="btn icon ghost" data-act="bigger" aria-label="Aumentar letra">A+</button></span>
     </div>
-    ${view.video && song.ytId ? `<div class="video"><iframe src="https://www.youtube-nocookie.com/embed/${song.ytId}?rel=0" title="Vídeo de ${esc(song.title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe></div>` : ''}
     ${song.content ? `<div class="sheet" style="--lyric-size:${fontSize}rem">${renderSheet(transposedContent(song, view.shift))}</div>`
       : `<div class="empty"><p>Ainda não há cifra para esta música.</p>
         <div class="row" style="justify-content:center">
           ${cc.direct ? `<a class="btn primary" href="${cc.direct}" target="_blank" rel="noopener">Abrir no Cifra Club</a>` : ''}
           <a class="btn" href="${cc.search}" target="_blank" rel="noopener">Buscar no Cifra Club</a>
           <a class="btn" href="#/editar/${song.id}${list ? '?volta=' + encodeURIComponent('/cifra/' + song.id + '?lista=' + list.id) : ''}">Colar ou escrever a cifra</a>
+          ${CAN_TAB && song.ytId ? `<a class="btn" href="#/editar/${song.id}?gerar=aba${list ? '&volta=' + encodeURIComponent('/cifra/' + song.id + '?lista=' + list.id) : ''}">Gerar acordes pelo vídeo</a>` : ''}
         </div>
         <p class="hint" style="margin:14px 0 0">Copie a cifra no Cifra Club e cole no editor: o formato “acordes em cima da letra” é convertido sozinho. No editor também dá para gerar um rascunho dos acordes por um arquivo de áudio ou pelo microfone.</p></div>`}
     ${list && (prev || next) ? `<nav class="pager">
@@ -562,19 +586,19 @@ function viewSong(song, q) {
         song.key = shiftedKey(song, view.shift);
         if (song.melody) { try { song.melody = shiftMelodyText(song.melody, view.shift); } catch { /* melodia inválida fica como está */ } }
         song.updatedAt = Date.now(); view.shift = 0; save(); rerender(); break;
-      case 'video': view.video = !view.video; rerender(); break;
+      case 'video': P.play(song, { queue: items ? items.map((x) => getSong(x.songId)).filter((x) => x && x.ytId) : null }); break;
       case 'bigger': case 'smaller':
         db.prefs.fontSize = Math.min(2.2, Math.max(0.8, (db.prefs.fontSize || 1.12) + (btn.dataset.act === 'bigger' ? 0.1 : -0.1)));
         save(); $('.sheet')?.style.setProperty('--lyric-size', db.prefs.fontSize + 'rem'); break;
       case 'cc': openCifraClub(song, list); break;
       case 'more': openExportSong(song); break;
       case 'stage': {
-        const f = await import('./features.js?v=3');
-        f.openStage({ song, html: renderSheet(transposedContent(song, view.shift)), keyLabel: keyLabel(song, view.shift), prefs: db.prefs, savePrefs: save, saveBpm: (b) => { song.bpm = b; save(); } });
+        const f = await import('./features.js?v=4');
+        f.openStage({ song, html: renderSheet(transposedContent(song, view.shift)), keyLabel: keyLabel(song, view.shift), prefs: db.prefs, savePrefs: save, saveBpm: (b) => { song.bpm = b; save(); }, playVideo: () => P.play(song) });
         break;
       }
       case 'mic': {
-        const f = await import('./features.js?v=3');
+        const f = await import('./features.js?v=4');
         f.openMic({
           song, shownKey: shiftedKey(song, view.shift), originalKey: orig,
           lists: db.lists, currentList: list,
@@ -592,7 +616,7 @@ function viewSong(song, q) {
         break;
       }
       case 'notation': {
-        const f = await import('./features.js?v=3');
+        const f = await import('./features.js?v=4');
         f.openNotation({
           song, shift: view.shift, keyLabel: shiftedKey(song, view.shift) || 'C',
           saveMelody: (txt) => { song.melody = txt; song.updatedAt = Date.now(); save(); },
@@ -679,6 +703,7 @@ function viewEditor(id, q) {
         <div class="row" style="margin:-6px 0 6px"><button type="button" class="btn small" data-act="convert">Converter “acordes em cima da letra”</button>
           <button type="button" class="btn small ghost" data-act="cc">Buscar no Cifra Club</button></div>
         <div class="row" style="margin:0 0 6px"><span class="hint">Gerar rascunho dos acordes:</span>
+          ${CAN_TAB ? '<button type="button" class="btn small" data-act="gen-tab">▶ Pelo vídeo (2x, sem baixar)</button>' : ''}
           <button type="button" class="btn small" data-act="gen-file">Pelo arquivo de áudio</button>
           <button type="button" class="btn small" data-act="gen-mic">🎤 Pelo microfone</button></div>
         <details class="help"><summary>Como escrever a cifra</summary>
@@ -738,6 +763,26 @@ function viewEditor(id, q) {
     location.hash = q.volta ? '#' + q.volta : '#/cifra/' + s.id + (q.lista ? '?lista=' + q.lista : '');
   };
 
+  function openGenerator(mode) {
+    const yt = M.extractYouTube(form.yt.value)[0];
+    if (mode === 'mic' || mode === 'file' || yt) { /* ok */ } else { toast('Cole o link do vídeo do YouTube no campo “Vídeo do YouTube” primeiro.'); form.yt.focus(); return; }
+    import('./chords.js?v=4').then((c) => c.openChordGenerator({
+      mode,
+      song: { id: song.id || 'novo', title: form.title.value, artist: form.artist.value, ytId: yt ? yt.id : '' },
+      player: P,
+      bpm: Number(form.bpm.value) || 80, title: form.title.value, hasContent: !!ta.value.trim(),
+      renderSheet, toast,
+      onApply: ({ text, key, bpm, append }) => {
+        ta.value = append ? ta.value.replace(/\s*$/, '\n\n') + text : text;
+        if (!append || !form.key.value) form.key.value = key;
+        form.bpm.value = bpm;
+        dirty = true; preview();
+        toast('Rascunho inserido. Revise e salve.');
+      },
+    }));
+  }
+  if (q.gerar === 'aba' && CAN_TAB) openGenerator('tab');
+
   app.oninput = null; app.onchange = null;
   app.onclick = (e) => {
     const btn = e.target.closest('[data-act]');
@@ -746,22 +791,10 @@ function viewEditor(id, q) {
     if (act === 'back' && dirty && !confirm('Sair sem salvar as mudanças desta cifra?')) { e.preventDefault(); return; }
     if (act === 'back') dirty = false;
     if (act === 'guess') { const g = M.guessKey(ta.value); if (g) { form.key.value = g; dirty = true; toast(`Tom sugerido pelo primeiro acorde: ${g}.`); } else toast('Não encontrei acordes para sugerir o tom.'); }
-    if (act === 'gen-file' || act === 'gen-mic') {
-      import('./chords.js?v=3').then((c) => c.openChordGenerator({
-        mode: act === 'gen-file' ? 'file' : 'mic',
-        bpm: Number(form.bpm.value) || 80, title: form.title.value, hasContent: !!ta.value.trim(),
-        renderSheet, toast,
-        onApply: ({ text, key, bpm, append }) => {
-          ta.value = append ? ta.value.replace(/\s*$/, '\n\n') + text : text;
-          if (!append || !form.key.value) form.key.value = key;
-          form.bpm.value = bpm;
-          dirty = true; preview();
-          toast('Rascunho inserido. Revise e salve.');
-        },
-      }));
-    }
+    if (act === 'gen-file' || act === 'gen-mic' || act === 'gen-tab') openGenerator(act.slice(4));
     if (act === 'convert') { ta.value = M.chordsOverLyricsToChordPro(ta.value); dirty = true; preview(); }
     if (act === 'cc') {
+
       const cc = M.cifraClubLinks(form.artist.value, form.title.value);
       window.open(cc.direct || cc.search, '_blank', 'noopener');
     }
@@ -776,7 +809,7 @@ function viewEditor(id, q) {
 
 // ---------- global ----------
 $('#mic-global').onclick = async () => {
-  const f = await import('./features.js?v=3');
+  const f = await import('./features.js?v=4');
   f.openMic({
     song: null, lists: db.lists, songs: Object.values(db.songs).filter((s) => songKey(s)),
     openSongInKey: (songId, k) => { location.hash = `#/cifra/${songId}?tom=${encodeURIComponent(k)}`; },

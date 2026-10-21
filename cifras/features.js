@@ -1,6 +1,6 @@
 // Recursos pesados, carregados só quando o usuário pede (microfone, modo rolagem, partitura/tab).
-import * as M from './music.js?v=3';
-import { toast, loadScript } from './util.js?v=3';
+import * as M from './music.js?v=4';
+import { toast, loadScript } from './util.js?v=4';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ABCJS_URL = 'https://cdn.jsdelivr.net/npm/abcjs@6/dist/abcjs-basic-min.js';
@@ -222,7 +222,6 @@ export function openStage(ctx) {
       <h1 style="margin:0">${esc(song.title)}</h1><p class="artist" style="margin:0 0 1.2em;color:var(--muted)">${[song.artist, 'Tom ' + ctx.keyLabel].filter(Boolean).map(esc).join(' · ')}</p>
       ${ctx.html}</div></div>
     <div class="guide" aria-hidden="true"></div>
-    ${song.ytId ? `<div class="mini-video" hidden><iframe src="https://www.youtube-nocookie.com/embed/${song.ytId}?rel=0" title="Vídeo" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>` : ''}
     <div class="controls">
       <button class="btn primary" data-x="play" style="min-width:110px">▶ Rolar</button>
       <span class="grp"><button class="btn icon" data-x="slower" aria-label="Mais devagar">−</button><span class="val" id="spd"></span><button class="btn icon" data-x="faster" aria-label="Mais rápido">+</button></span>
@@ -235,6 +234,7 @@ export function openStage(ctx) {
     </div>`;
   document.body.append(el);
   document.body.style.overflow = 'hidden';
+  document.body.classList.add('stage-open');
   const sc = el.querySelector('.scroller');
   const sheet = el.querySelector('.sheet');
   const lines = [...sheet.querySelectorAll('.ln, .section, .chords-only, .tab')];
@@ -286,6 +286,7 @@ export function openStage(ctx) {
   const close = () => {
     setPlaying(false); metro.close(); wake?.release?.();
     document.body.style.overflow = '';
+    document.body.classList.remove('stage-open');
     document.removeEventListener('keydown', onKey);
     el.remove();
   };
@@ -312,7 +313,7 @@ export function openStage(ctx) {
       const b = e.target.closest('[data-x]');
       if (metro.running) { metro.stop(); b.setAttribute('aria-pressed', 'false'); } else { metro.start(bpm); b.setAttribute('aria-pressed', 'true'); }
     }
-    if (x === 'video') { const v = el.querySelector('.mini-video'); v.hidden = !v.hidden; }
+    if (x === 'video') ctx.playVideo();
     if (x === 'big' || x === 'small') {
       size = Math.min(3, Math.max(0.9, size + (x === 'big' ? 0.15 : -0.15)));
       sheet.style.setProperty('--lyric-size', size + 'rem'); persist(); highlight();
