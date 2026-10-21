@@ -1,7 +1,7 @@
 // Reconhecimento de acordes a partir de áudio (arquivo ou microfone), todo no navegador.
 // Carregado só quando o usuário pede.
-import * as M from './music.js?v=5';
-import * as LY from './lyrics.js?v=5';
+import * as M from './music.js?v=6';
+import * as LY from './lyrics.js?v=6';
 
 // ---------------- análise (sem dependência de navegador) ----------------
 
@@ -388,8 +388,8 @@ export function openChordGenerator(ctx) {
         // vídeo com introdução diferente da gravação do banco: sugere um ajuste inicial
         if (found.lines.length && duration && found.duration && Math.abs(duration - found.duration) > 3) lyr.offset = Math.round((duration - found.duration) * 2) / 2;
       } else Object.assign(lyr, { status: 'notfound', lines: [], plain: '' });
-    } catch {
-      Object.assign(lyr, { status: 'error', lines: [], plain: '' });
+    } catch (err) {
+      Object.assign(lyr, { status: 'error', lines: [], plain: '', msg: err.message });
     }
     renderLyrics(); renderPreview(); updatePreLyrics();
   }
@@ -398,7 +398,7 @@ export function openChordGenerator(ctx) {
     if (!audio) return;
     lyr.status = 'transcribing'; lyr.msg = 'Preparando o áudio…'; renderLyrics();
     try {
-      const W = await import('./whisper.js?v=5');
+      const W = await import('./whisper.js?v=6');
       const a16 = await W.to16k(audio.samples, audio.sampleRate);
       const chunks = await W.transcribe(a16, {
         model: W.MODELS[lyr.model].id, language: lyr.lang,
@@ -446,7 +446,7 @@ export function openChordGenerator(ctx) {
       } else if (!lyr.lines.length && lyr.plain) html += '<p class="hint">Essa letra não tem tempo marcado: ela vai abaixo dos acordes, para você encaixar.</p>';
       if (lyr.source === 'do LRCLIB') html += `<details style="margin-top:8px"><summary class="hint" style="cursor:pointer">Não é essa a letra?</summary>${whisperControls()}</details>`;
     } else {
-      const why = lyr.status === 'error' ? 'Não consegui consultar o LRCLIB agora.'
+      const why = lyr.status === 'error' ? `Não consegui consultar o LRCLIB: ${lyr.msg}.`
         : lyr.status === 'whisper-error' ? lyr.msg : 'A letra não está no LRCLIB.';
       html += `<p>${esc(why)}</p>${whisperControls()}`;
     }
@@ -463,7 +463,7 @@ export function openChordGenerator(ctx) {
     const slow = d.querySelector('#cg-slow');
     if (lyr.status === 'found') { el.textContent = `Letra encontrada no LRCLIB: ${lyr.info}. A análise pode ser em 2x.`; if (slow) slow.checked = false; }
     else if (lyr.status === 'searching') el.textContent = 'Procurando a letra no LRCLIB…';
-    else { el.textContent = lyr.status === 'error' ? 'Não consegui consultar o LRCLIB. Marque a opção abaixo para transcrever a letra com IA.' : 'A letra não está no LRCLIB. Para transcrevê-la com IA, a análise precisa ser em velocidade normal.'; if (slow) slow.checked = true; }
+    else { el.textContent = lyr.status === 'error' ? `Não consegui consultar o LRCLIB (${lyr.msg}). Marque a opção abaixo para transcrever a letra com IA.` : 'A letra não está no LRCLIB. Para transcrevê-la com IA, a análise precisa ser em velocidade normal.'; if (slow) slow.checked = true; }
   }
 
   // ---------- resultado ----------

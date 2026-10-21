@@ -35,10 +35,13 @@ export async function findLyrics({ title, artist, duration = 0 }) {
   if (artist) queries.push(new URLSearchParams({ track_name: title, artist_name: artist }));
   queries.push(new URLSearchParams({ q: [title, artist].filter(Boolean).join(' ') }));
   if (artist) queries.push(new URLSearchParams({ track_name: title }));
+  const clean = title.replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  if (clean && clean !== title) queries.push(new URLSearchParams({ q: clean }));
   let results = [];
   for (const q of queries) {
-    const r = await fetch(base + q.toString());
-    if (!r.ok) throw new Error('lrclib ' + r.status);
+    let r;
+    try { r = await fetch(base + q.toString()); } catch (err) { throw new Error('sem conexão com o LRCLIB (' + (err.message || 'erro de rede') + ')'); }
+    if (!r.ok) throw new Error('o LRCLIB respondeu com erro ' + r.status);
     results = await r.json();
     if (results.length) break;
   }
@@ -50,7 +53,7 @@ export async function findLyrics({ title, artist, duration = 0 }) {
     return { x, score };
   }).sort((a, b) => b.score - a.score);
   const best = scored[0];
-  if (!best || similarity(best.x.trackName, title) < 0.34) return null;
+  if (!best || similarity(best.x.trackName, title) < 0.3) return null;
   const x = best.x;
   return {
     lines: x.syncedLyrics ? parseLRC(x.syncedLyrics).filter((l) => l.text) : [],

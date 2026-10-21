@@ -23,9 +23,16 @@ export async function to16k(samples, sampleRate) {
   return out.getChannelData(0);
 }
 
-/** Transcreve a letra. Retorna os trechos do Whisper: [{ timestamp:[s,e], text }]. */
-export function transcribe(audio16k, { model, language = 'portuguese', onStatus = () => {} }) {
-  worker ||= new Worker(new URL('./whisper-worker.js?v=5', import.meta.url), { type: 'module' });
+let wasmOnly = false;
+
+/** Usa a placa de vídeo (WebGPU) só se o navegador realmente conseguir acessá-la. */
+async function pickDevice() {
+  if (wasmOnly || !navigator.gpu) return 'wasm';
+  try { return (await navigator.gpu.requestAdapter()) ? 'webgpu' : 'wasm'; } catch { return 'wasm'; }
+}
+
+function run(audio16k, model, language, device, onStatus) {
+  worker ||= new Worker(new URL('./whisper-worker.js?v=6', import.meta.url), { type: 'module' });
   const files = {};
   return new Promise((resolve, reject) => {
     worker.onmessage = (e) => {
@@ -41,6 +48,22 @@ export function transcribe(audio16k, { model, language = 'portuguese', onStatus 
       if (m.type === 'error') reject(new Error(m.message));
     };
     worker.onerror = (err) => reject(new Error(err.message || 'Falha ao iniciar a IA.'));
-    worker.postMessage({ audio: audio16k, model, language });
+    worker.postMessage({ audio: audio16k, model, language, device });
   });
+}
+
+/** Transcreve a letra. Retorna os trechos do Whisper: [{ timestamp:[s,e], text }]. */
+export async function transcribe(audio16k, { model, language = 'portuguese', onStatus = () => {} }) {
+  const device = await pickDevice();
+  try {
+    return await run(audio16k, model, language, device, onStatus);
+  } catch (err) {
+    if (device !== 'webgpu') throw err;
+    // a placa de vídeo falhou: recomeça do zero sem ela (o processador é mais lento, mas sempre funciona)
+    worker?.terminate();
+    worker = null;
+    wasmOnly = true;
+    onStatus('A placa de vídeo não pôde ser usada; continuando pelo processador…');
+    return run(audio16k, model, language, 'wasm', onStatus);
+  }
 }

@@ -16,16 +16,13 @@ async function load(model, device) {
 }
 
 self.onmessage = async (e) => {
-  const { audio, model, language } = e.data;
+  const { audio, model, language, device } = e.data;
   try {
-    if (!asr || loaded !== model) {
-      self.postMessage({ type: 'status', text: 'Baixando o modelo de IA (só na primeira vez)…' });
-      try {
-        asr = await load(model, self.navigator.gpu ? 'webgpu' : 'wasm');
-      } catch {
-        asr = await load(model, 'wasm');
-      }
-      loaded = model;
+    const key = model + '|' + device;
+    if (!asr || loaded !== key) {
+      self.postMessage({ type: 'status', text: 'Carregando o modelo de IA (o download só acontece na primeira vez)…' });
+      asr = await load(model, device);
+      loaded = key;
     }
     self.postMessage({ type: 'status', text: 'Transcrevendo a letra… isso pode levar alguns minutos.' });
     const out = await asr(audio, {
