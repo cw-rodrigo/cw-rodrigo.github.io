@@ -1,4 +1,5 @@
-import * as M from './music.js';
+import * as M from './music.js?v=3';
+import { toast, loadScript } from './util.js?v=3';
 
 // ---------- utilidades ----------
 const $ = (s, el = document) => el.querySelector(s);
@@ -6,26 +7,6 @@ const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
 const app = $('#app');
-
-let toastTimer;
-export function toast(msg) {
-  let el = $('.toast');
-  if (!el) { el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status'); document.body.append(el); }
-  el.textContent = msg;
-  el.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.hidden = true; }, 3200);
-}
-
-const scripts = {};
-export function loadScript(src) {
-  scripts[src] ||= new Promise((res, rej) => {
-    const s = document.createElement('script');
-    s.src = src; s.onload = res; s.onerror = () => rej(new Error('Falha ao carregar ' + src));
-    document.head.append(s);
-  });
-  return scripts[src];
-}
 
 function download(name, text, type = 'text/plain') {
   const blob = new Blob([text], { type: type + ';charset=utf-8' });
@@ -588,12 +569,12 @@ function viewSong(song, q) {
       case 'cc': openCifraClub(song, list); break;
       case 'more': openExportSong(song); break;
       case 'stage': {
-        const f = await import('./features.js');
+        const f = await import('./features.js?v=3');
         f.openStage({ song, html: renderSheet(transposedContent(song, view.shift)), keyLabel: keyLabel(song, view.shift), prefs: db.prefs, savePrefs: save, saveBpm: (b) => { song.bpm = b; save(); } });
         break;
       }
       case 'mic': {
-        const f = await import('./features.js');
+        const f = await import('./features.js?v=3');
         f.openMic({
           song, shownKey: shiftedKey(song, view.shift), originalKey: orig,
           lists: db.lists, currentList: list,
@@ -611,7 +592,7 @@ function viewSong(song, q) {
         break;
       }
       case 'notation': {
-        const f = await import('./features.js');
+        const f = await import('./features.js?v=3');
         f.openNotation({
           song, shift: view.shift, keyLabel: shiftedKey(song, view.shift) || 'C',
           saveMelody: (txt) => { song.melody = txt; song.updatedAt = Date.now(); save(); },
@@ -766,7 +747,7 @@ function viewEditor(id, q) {
     if (act === 'back') dirty = false;
     if (act === 'guess') { const g = M.guessKey(ta.value); if (g) { form.key.value = g; dirty = true; toast(`Tom sugerido pelo primeiro acorde: ${g}.`); } else toast('Não encontrei acordes para sugerir o tom.'); }
     if (act === 'gen-file' || act === 'gen-mic') {
-      import('./chords.js').then((c) => c.openChordGenerator({
+      import('./chords.js?v=3').then((c) => c.openChordGenerator({
         mode: act === 'gen-file' ? 'file' : 'mic',
         bpm: Number(form.bpm.value) || 80, title: form.title.value, hasContent: !!ta.value.trim(),
         renderSheet, toast,
@@ -795,7 +776,7 @@ function viewEditor(id, q) {
 
 // ---------- global ----------
 $('#mic-global').onclick = async () => {
-  const f = await import('./features.js');
+  const f = await import('./features.js?v=3');
   f.openMic({
     song: null, lists: db.lists, songs: Object.values(db.songs).filter((s) => songKey(s)),
     openSongInKey: (songId, k) => { location.hash = `#/cifra/${songId}?tom=${encodeURIComponent(k)}`; },

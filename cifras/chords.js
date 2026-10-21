@@ -1,6 +1,6 @@
 // Reconhecimento de acordes a partir de áudio (arquivo ou microfone), todo no navegador.
 // Carregado só quando o usuário pede.
-import * as M from './music.js';
+import * as M from './music.js?v=3';
 
 // ---------------- análise (sem dependência de navegador) ----------------
 
