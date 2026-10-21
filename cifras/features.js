@@ -1,6 +1,6 @@
 // Recursos pesados, carregados só quando o usuário pede (microfone, modo rolagem, partitura/tab).
-import * as M from './music.js?v=7';
-import { toast, loadScript } from './util.js?v=7';
+import * as M from './music.js?v=8';
+import { toast, loadScript } from './util.js?v=8';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ABCJS_URL = 'https://cdn.jsdelivr.net/npm/abcjs@6/dist/abcjs-basic-min.js';

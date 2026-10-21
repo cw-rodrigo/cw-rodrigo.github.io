@@ -1,7 +1,7 @@
 // Reconhecimento de acordes a partir de áudio (arquivo ou microfone), todo no navegador.
 // Carregado só quando o usuário pede.
-import * as M from './music.js?v=7';
-import * as LY from './lyrics.js?v=7';
+import * as M from './music.js?v=8';
+import * as LY from './lyrics.js?v=8';
 
 // ---------------- análise (sem dependência de navegador) ----------------
 
@@ -447,7 +447,7 @@ export function openChordGenerator(ctx) {
     if (!audio) return;
     lyr.status = 'transcribing'; lyr.msg = 'Preparando o áudio…'; renderLyrics();
     try {
-      const W = await import('./whisper.js?v=7');
+      const W = await import('./whisper.js?v=8');
       const a16 = await W.to16k(audio.samples, audio.sampleRate);
       const chunks = await W.transcribe(a16, {
         model: W.MODELS[lyr.model].id, language: lyr.lang,
@@ -497,7 +497,8 @@ export function openChordGenerator(ctx) {
       } else if (!lyr.lines.length && lyr.plain) html += `<p class="hint">Essa letra não tem tempo marcado: ela vai abaixo dos acordes. A IA pode ouvir a música e encaixar cada linha no tempo certo, mantendo o texto correto.</p>${whisperControls()}`;
       if (lyr.source === 'do LRCLIB') html += `<details style="margin-top:8px"><summary class="hint" style="cursor:pointer">Não é essa a letra?</summary>${whisperControls()}</details>`;
     } else {
-      const why = lyr.status === 'error' ? `Não consegui consultar o LRCLIB: ${lyr.msg}.`
+      const why = lyr.status === 'error' && /503/.test(lyr.msg) ? 'A consulta direta pelo nome não achou a letra, e a busca geral do LRCLIB está sobrecarregada agora. Tente “Buscar com outro nome” (o nome exato da música e do artista) ou mais tarde, ou use a IA.'
+        : lyr.status === 'error' ? `Não consegui consultar o LRCLIB: ${lyr.msg}.`
         : lyr.status === 'whisper-error' ? lyr.msg : 'A letra não está no LRCLIB.';
       html += `<p>${esc(why)}</p>${whisperControls()}`;
     }
@@ -585,7 +586,7 @@ export function openChordGenerator(ctx) {
     const msg = d.querySelector('#cg-msg');
     const bar = d.querySelector('#cg-bar');
     try {
-      const S = await import('./separate.js?v=7');
+      const S = await import('./separate.js?v=8');
       const stems = await S.separate(rec.channels, rec.sampleRate, (text, p) => { msg.textContent = text; bar.style.width = (p * 100) + '%'; });
       msg.textContent = 'Encontrando os acordes nas faixas separadas…';
       const { frames, hop } = await analyzeSamples(stems.other, 44100, (p) => { bar.style.width = (p * 100) + '%'; }, stems.bass);

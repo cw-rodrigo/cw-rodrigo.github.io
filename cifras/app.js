@@ -1,6 +1,6 @@
-import * as M from './music.js?v=7';
-import { toast, loadScript } from './util.js?v=7';
-import * as P from './player.js?v=7';
+import * as M from './music.js?v=8';
+import { toast, loadScript } from './util.js?v=8';
+import * as P from './player.js?v=8';
 
 const CAN_TAB = !!navigator.mediaDevices?.getDisplayMedia && !/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
 
@@ -638,12 +638,12 @@ function viewSong(song, q) {
       case 'cc': openCifraClub(song, list); break;
       case 'more': openExportSong(song); break;
       case 'stage': {
-        const f = await import('./features.js?v=7');
+        const f = await import('./features.js?v=8');
         f.openStage({ song, html: renderSheet(transposedContent(song, view.shift)), keyLabel: keyLabel(song, view.shift), prefs: db.prefs, savePrefs: save, saveBpm: (b) => { song.bpm = b; save(); }, playVideo: () => P.play(song) });
         break;
       }
       case 'mic': {
-        const f = await import('./features.js?v=7');
+        const f = await import('./features.js?v=8');
         f.openMic({
           song, shownKey: shiftedKey(song, view.shift), originalKey: orig,
           lists: db.lists, currentList: list,
@@ -661,7 +661,7 @@ function viewSong(song, q) {
         break;
       }
       case 'notation': {
-        const f = await import('./features.js?v=7');
+        const f = await import('./features.js?v=8');
         f.openNotation({
           song, shift: view.shift, keyLabel: shiftedKey(song, view.shift) || 'C',
           saveMelody: (txt) => { song.melody = txt; song.updatedAt = Date.now(); save(); },
@@ -811,7 +811,7 @@ function viewEditor(id, q) {
   function openGenerator(mode) {
     const yt = M.extractYouTube(form.yt.value)[0];
     if (mode === 'mic' || mode === 'file' || yt) { /* ok */ } else { toast('Cole o link do vídeo do YouTube no campo “Vídeo do YouTube” primeiro.'); form.yt.focus(); return; }
-    import('./chords.js?v=7').then((c) => c.openChordGenerator({
+    import('./chords.js?v=8').then((c) => c.openChordGenerator({
       mode,
       song: { id: song.id || 'novo', title: form.title.value, artist: form.artist.value, ytId: yt ? yt.id : '' },
       player: P,
@@ -854,7 +854,7 @@ function viewEditor(id, q) {
 
 // ---------- global ----------
 $('#mic-global').onclick = async () => {
-  const f = await import('./features.js?v=7');
+  const f = await import('./features.js?v=8');
   f.openMic({
     song: null, lists: db.lists, songs: Object.values(db.songs).filter((s) => songKey(s)),
     openSongInKey: (songId, k) => { location.hash = `#/cifra/${songId}?tom=${encodeURIComponent(k)}`; },
