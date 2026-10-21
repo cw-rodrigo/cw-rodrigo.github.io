@@ -115,3 +115,38 @@ export function close() {
 /** Acesso direto ao player para a análise pela aba. */
 export function api() { return state.player; }
 export function setOnEnded(fn) { state.onEnded = fn; }
+
+/**
+ * Lê os vídeos de uma playlist, na ordem, usando um player temporário (visível) dentro de `mount`.
+ * Usa só funções documentadas da API do player do YouTube (cuePlaylist / getPlaylist).
+ */
+export async function playlistVideoIds(listId, mount) {
+  const YT = await loadApi();
+  const box = document.createElement('div');
+  box.className = 'pl-reader';
+  const holder = document.createElement('div');
+  box.append(holder);
+  mount.append(box);
+  try {
+    return await new Promise((resolve, reject) => {
+      let tries = 0;
+      const pl = new YT.Player(holder, {
+        host: 'https://www.youtube-nocookie.com',
+        width: 356, height: 200,
+        playerVars: { listType: 'playlist', list: listId, rel: 0, playsinline: 1 },
+        events: {
+          onReady: () => {
+            const poll = setInterval(() => {
+              const ids = pl.getPlaylist?.();
+              if (ids && ids.length) { clearInterval(poll); resolve(ids); pl.destroy(); }
+              else if (++tries > 40) { clearInterval(poll); reject(new Error('playlist')); pl.destroy(); }
+            }, 250);
+          },
+          onError: () => reject(new Error('playlist')),
+        },
+      });
+    });
+  } finally {
+    box.remove();
+  }
+}

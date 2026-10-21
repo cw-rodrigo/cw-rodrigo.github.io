@@ -1,6 +1,7 @@
 // Reconhecimento de acordes a partir de áudio (arquivo ou microfone), todo no navegador.
 // Carregado só quando o usuário pede.
-import * as M from './music.js?v=4';
+import * as M from './music.js?v=5';
+import * as LY from './lyrics.js?v=5';
 
 // ---------------- análise (sem dependência de navegador) ----------------
 
@@ -231,8 +232,11 @@ export async function analyzeSamples(samples, sampleRate, onProgress = () => {})
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 class StreamChords {
-  /** Analisa um MediaStream em tempo real. `getTime()` dá o tempo da música (padrão: tempo decorrido). */
-  async start(stream, onFrame, getTime = null) {
+  /**
+   * Analisa um MediaStream em tempo real. `getTime()` dá o tempo da música (padrão: tempo decorrido).
+   * Com `record`, guarda também o áudio bruto (para transcrever a letra depois).
+   */
+  async start(stream, onFrame, getTime = null, { record = false } = {}) {
     this.stream = stream;
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     const src = this.ctx.createMediaStreamSource(stream);
@@ -240,6 +244,19 @@ class StreamChords {
     this.an.fftSize = 16384;
     this.an.smoothingTimeConstant = 0;
     src.connect(this.an);
+    this.pcm = [];
+    this.pcmStart = null;
+    this.timeline = [];
+    if (record) {
+      const sp = this.ctx.createScriptProcessor(4096, 1, 1);
+      sp.onaudioprocess = (e) => {
+        if (this.pcmStart === null) this.pcmStart = e.playbackTime;
+        this.pcm.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      };
+      src.connect(sp);
+      sp.connect(this.ctx.destination); // a saída fica em silêncio; só precisa estar ligada
+      this.sp = sp;
+    }
     const db = new Float32Array(this.an.frequencyBinCount);
     const mags = new Float32Array(this.an.frequencyBinCount);
     const time = new Float32Array(this.an.fftSize);
@@ -253,13 +270,36 @@ class StreamChords {
       let e = 0;
       for (const v of time) e += v * v;
       const t = getTime ? getTime() : (performance.now() - this.t0) / 1000;
+      this.timeline.push({ ctx: this.ctx.currentTime, t });
       const frame = { t, chroma: chromaFromMags(mags, binHz), energy: Math.sqrt(e / time.length) };
       this.frames.push(frame);
       onFrame(frame, this.frames);
     }, 100);
   }
+  /** Áudio gravado + conversão do tempo da gravação para o tempo da música. */
+  recording() {
+    if (!this.pcm.length) return null;
+    const n = this.pcm.reduce((k, c) => k + c.length, 0);
+    const samples = new Float32Array(n);
+    let o = 0;
+    for (const c of this.pcm) { samples.set(c, o); o += c.length; }
+    const tl = this.timeline;
+    const start = this.pcmStart || 0;
+    const toMusicTime = (w) => {
+      const c = start + w;
+      if (!tl.length) return w;
+      const i = tl.findIndex((p) => p.ctx >= c);
+      if (i === -1) { const z = tl[tl.length - 1]; return z.t + (c - z.ctx); }
+      if (i === 0) return tl[0].t + (c - tl[0].ctx);
+      const a = tl[i - 1], b = tl[i];
+      return a.t + ((c - a.ctx) / (b.ctx - a.ctx || 1)) * (b.t - a.t);
+    };
+    return { samples, sampleRate: this.sampleRate || 48000, toMusicTime };
+  }
   stop() {
     clearInterval(this.timer);
+    this.sampleRate = this.ctx?.sampleRate;
+    this.sp?.disconnect();
     this.stream?.getTracks().forEach((t) => t.stop());
     this.ctx?.close();
     return this.frames || [];
@@ -285,8 +325,9 @@ async function captureThisTab() {
 }
 
 /**
- * Abre o gerador de rascunho.
- * ctx: { mode: 'file'|'mic', bpm, title, hasContent, renderSheet(text), onApply({ text, key, bpm, append }), toast }
+ * Abre o gerador de rascunho (acordes + letra).
+ * ctx: { mode: 'file'|'mic'|'tab', song:{title,artist,ytId}, player, bpm, title, hasContent,
+ *        renderSheet(text), onApply({ text, key, bpm, append }), toast }
  */
 export function openChordGenerator(ctx) {
   const d = document.createElement('dialog');
@@ -295,21 +336,27 @@ export function openChordGenerator(ctx) {
   let mic = null;
   let audioUrl = null;
   let result = null; // { key, segments }
+  let audio = null; // { samples, sampleRate, toMusicTime } para transcrever a letra
+  let duration = 0;
   let bpm = ctx.bpm || 80;
   let follow = null;
+  let tabRun = null;
+  const song = ctx.song || { title: ctx.title || '', artist: '' };
+  const lyr = { status: 'idle', lines: [], plain: '', source: '', info: '', offset: 0, include: true, msg: '', title: song.title || '', artist: song.artist || '', model: 0, lang: 'portuguese' };
   const cleanup = () => {
     mic?.stop(); mic = null; clearInterval(follow);
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     if (tabRun) tabRun.finish(true);
   };
-  let tabRun = null;
   d.addEventListener('close', () => { cleanup(); d.remove(); });
 
   const intro = ctx.mode === 'file'
-    ? `<p>Escolha um arquivo de áudio (MP3, M4A, WAV…) de <strong>${esc(ctx.title || 'a música')}</strong>. A análise acontece no seu aparelho; o arquivo não é enviado para lugar nenhum.</p>
+    ? `<p>Escolha um arquivo de áudio (MP3, M4A, WAV…) de <strong>${esc(song.title || 'a música')}</strong>. A análise acontece no seu aparelho; o arquivo não é enviado para lugar nenhum.</p>
        <label class="btn primary">Escolher arquivo de áudio<input type="file" accept="audio/*,video/mp4" data-x="file" hidden></label>`
     : ctx.mode === 'tab'
-      ? `<p>O vídeo de <strong>${esc(ctx.title || 'a música')}</strong> toca no player do site em velocidade 2x (o tom não muda) e o app escuta o áudio desta aba. Nada é baixado.</p>
+      ? `<p>O vídeo de <strong>${esc(song.title || 'a música')}</strong> toca no player do site e o app escuta o áudio desta aba. Nada é baixado.</p>
+         <p id="cg-prelyr" class="hint">Procurando a letra no LRCLIB…</p>
+         <label class="check" style="margin:8px 0"><input type="checkbox" id="cg-slow"> Analisar em velocidade normal, para transcrever a letra com IA (leva o tempo da música)</label>
          <p class="hint">O navegador vai pedir para compartilhar esta aba: deixe marcada a opção de <strong>compartilhar o áudio da guia</strong>. O som fica mudo enquanto analisa.</p>
          <button class="btn primary" data-x="tab-start">Analisar o vídeo</button>`
       : `<p>Deixe a música tocar perto do microfone, ou toque você mesmo. Os acordes vão sendo anotados enquanto você ouve; pare quando a música acabar.</p>
@@ -325,16 +372,119 @@ export function openChordGenerator(ctx) {
         <button class="btn primary" data-x="${ctx.mode === 'tab' ? 'tab-stop' : 'mic-stop'}">Parar e gerar a cifra</button></div>
     </div>
     <div id="cg-result" hidden></div>
-    <p class="hint" style="margin-top:14px">O resultado é um rascunho só com os acordes (sem a letra). Funciona melhor com gravações limpas, poucos instrumentos e sem muita distorção. Confira e corrija no editor.</p>
+    <p class="hint" style="margin-top:14px">O resultado é um rascunho: os acordes vêm do áudio e a letra vem do banco de letras LRCLIB ou, se ela não estiver lá, da transcrição por IA. Confira e corrija no editor.</p>
     <div class="row end" style="margin-top:10px"><button class="btn" data-x="close">Fechar</button></div>`;
 
   const show = (id) => ['cg-start', 'cg-work', 'cg-result'].forEach((x) => { d.querySelector('#' + x).hidden = x !== id; });
 
+  // ---------- letra ----------
+  async function searchLyrics() {
+    lyr.status = 'searching'; renderLyrics();
+    try {
+      const found = await LY.findLyrics({ title: lyr.title, artist: lyr.artist, duration });
+      if (found && (found.lines.length || found.plain)) {
+        Object.assign(lyr, { status: 'found', lines: found.lines, plain: found.plain, source: 'do LRCLIB', include: true, offset: 0,
+          info: `“${found.track}” — ${found.artist}${found.lines.length ? '' : ' (sem tempo)'}` });
+        // vídeo com introdução diferente da gravação do banco: sugere um ajuste inicial
+        if (found.lines.length && duration && found.duration && Math.abs(duration - found.duration) > 3) lyr.offset = Math.round((duration - found.duration) * 2) / 2;
+      } else Object.assign(lyr, { status: 'notfound', lines: [], plain: '' });
+    } catch {
+      Object.assign(lyr, { status: 'error', lines: [], plain: '' });
+    }
+    renderLyrics(); renderPreview(); updatePreLyrics();
+  }
+
+  async function runWhisper() {
+    if (!audio) return;
+    lyr.status = 'transcribing'; lyr.msg = 'Preparando o áudio…'; renderLyrics();
+    try {
+      const W = await import('./whisper.js?v=5');
+      const a16 = await W.to16k(audio.samples, audio.sampleRate);
+      const chunks = await W.transcribe(a16, {
+        model: W.MODELS[lyr.model].id, language: lyr.lang,
+        onStatus: (m) => { lyr.msg = m; const el = d.querySelector('#ly-msg'); if (el) el.textContent = m; },
+      });
+      const lines = LY.whisperToLines(chunks).map((l) => ({ ...l, t: audio.toMusicTime(l.t), end: audio.toMusicTime(l.end) }));
+      if (!lines.length) throw new Error('vazio');
+      Object.assign(lyr, { status: 'found', lines, plain: '', source: 'transcrita por IA', include: true, offset: 0, info: 'Transcrita por IA — confira as palavras.' });
+    } catch (err) {
+      lyr.status = 'whisper-error';
+      lyr.msg = err.message === 'vazio' ? 'A IA não reconheceu nenhuma letra.' : 'Não foi possível transcrever: ' + err.message;
+    }
+    renderLyrics(); renderPreview();
+  }
+
+  const W_MODELS = ['Rápido (download menor)', 'Mais preciso (download maior, mais lento)'];
+  function whisperControls() {
+    if (!audio) {
+      return ctx.mode === 'tab'
+        ? '<p class="hint">Para transcrever a letra com IA, analise de novo marcando “velocidade normal”.</p>'
+        : '';
+    }
+    return `<div class="row" style="margin-top:8px">
+      <select id="ly-model" style="width:auto">${W_MODELS.map((m, i) => `<option value="${i}" ${i === lyr.model ? 'selected' : ''}>${m}</option>`).join('')}</select>
+      <select id="ly-lang" style="width:auto">${[['portuguese', 'Português'], ['english', 'Inglês'], ['spanish', 'Espanhol']].map(([v, l]) => `<option value="${v}" ${v === lyr.lang ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <button class="btn" data-x="whisper" ${lyr.status === 'transcribing' ? 'disabled' : ''}>Transcrever a letra com IA</button></div>
+      <p class="hint">A IA roda no seu aparelho. Voz com muitos instrumentos atrás gera erros; no celular pode demorar bastante.</p>`;
+  }
+
+  function renderLyrics() {
+    const box = d.querySelector('#cg-lyrics');
+    if (!box) return;
+    let html = '<h3 style="margin:0 0 6px">Letra</h3>';
+    if (lyr.status === 'searching' || lyr.status === 'idle') html += '<p class="hint">Procurando a letra no LRCLIB…</p>';
+    else if (lyr.status === 'transcribing') html += `<p id="ly-msg">${esc(lyr.msg)}</p><div class="meter"><i style="width:100%;opacity:.4"></i></div>`;
+    else if (lyr.status === 'found') {
+      html += `<p>${lyr.source === 'do LRCLIB' ? 'Encontrada no LRCLIB: ' : ''}${esc(lyr.info)}</p>
+        <label class="check"><input type="checkbox" id="ly-inc" ${lyr.include ? 'checked' : ''}> Incluir a letra na cifra</label>`;
+      if (lyr.lines.length && lyr.include) {
+        html += `<div class="row" style="margin-top:8px"><span>Sincronia da letra</span>
+          <button class="btn small icon" data-x="ly-minus" aria-label="Letra meio segundo antes">−</button>
+          <span style="min-width:4.5em;text-align:center;font-variant-numeric:tabular-nums">${lyr.offset > 0 ? '+' : ''}${lyr.offset.toFixed(1).replace('.', ',')} s</span>
+          <button class="btn small icon" data-x="ly-plus" aria-label="Letra meio segundo depois">+</button>
+          <span class="hint" style="flex:1 1 220px">Se os acordes caírem cedo ou tarde demais nas palavras, ajuste aqui.</span></div>`;
+      } else if (!lyr.lines.length && lyr.plain) html += '<p class="hint">Essa letra não tem tempo marcado: ela vai abaixo dos acordes, para você encaixar.</p>';
+      if (lyr.source === 'do LRCLIB') html += `<details style="margin-top:8px"><summary class="hint" style="cursor:pointer">Não é essa a letra?</summary>${whisperControls()}</details>`;
+    } else {
+      const why = lyr.status === 'error' ? 'Não consegui consultar o LRCLIB agora.'
+        : lyr.status === 'whisper-error' ? lyr.msg : 'A letra não está no LRCLIB.';
+      html += `<p>${esc(why)}</p>${whisperControls()}`;
+    }
+    html += `<details style="margin-top:8px"><summary class="hint" style="cursor:pointer">Buscar com outro nome</summary>
+      <div class="row" style="margin-top:6px"><input type="text" id="ly-title" placeholder="Música" value="${esc(lyr.title)}" style="flex:1 1 160px">
+      <input type="text" id="ly-artist" placeholder="Artista" value="${esc(lyr.artist)}" style="flex:1 1 160px">
+      <button class="btn small" data-x="ly-search">Buscar letra</button></div></details>`;
+    box.innerHTML = html;
+  }
+
+  function updatePreLyrics() {
+    const el = d.querySelector('#cg-prelyr');
+    if (!el) return;
+    const slow = d.querySelector('#cg-slow');
+    if (lyr.status === 'found') { el.textContent = `Letra encontrada no LRCLIB: ${lyr.info}. A análise pode ser em 2x.`; if (slow) slow.checked = false; }
+    else if (lyr.status === 'searching') el.textContent = 'Procurando a letra no LRCLIB…';
+    else { el.textContent = lyr.status === 'error' ? 'Não consegui consultar o LRCLIB. Marque a opção abaixo para transcrever a letra com IA.' : 'A letra não está no LRCLIB. Para transcrevê-la com IA, a análise precisa ser em velocidade normal.'; if (slow) slow.checked = true; }
+  }
+
+  // ---------- resultado ----------
+  function buildText() {
+    const base = segmentsToChordPro(result.segments, bpm);
+    if (lyr.status === 'found' && lyr.include) {
+      if (lyr.lines.length) return LY.alignLyrics(lyr.lines, result.segments, { offset: lyr.offset, source: lyr.source }) || base;
+      if (lyr.plain) return LY.appendPlainLyrics(base, lyr.plain);
+    }
+    return base;
+  }
+
+  function renderPreview() {
+    const el = d.querySelector('#cg-preview');
+    if (el && result) el.innerHTML = ctx.renderSheet(buildText());
+  }
+
   const drawResult = () => {
     show('cg-result');
-    const text = segmentsToChordPro(result.segments, bpm);
     const out = d.querySelector('#cg-result');
-    if (!text) {
+    if (!segmentsToChordPro(result.segments, bpm)) {
       out.innerHTML = '<p>Não consegui reconhecer acordes. Tente um trecho com o som mais alto ou mais limpo.</p>';
       return;
     }
@@ -343,16 +493,20 @@ export function openChordGenerator(ctx) {
       <div class="row" style="align-items:flex-end;gap:18px">
         <div><span class="hint">Tom provável</span><div class="detected" style="font-size:2.2rem;margin:0">${esc(result.key)}</div></div>
         <label class="field" style="margin:0"><span>Andamento (BPM)</span><input type="number" id="cg-bpm" min="30" max="260" value="${bpm}" style="width:100px"></label>
-        <p class="hint" style="margin:0;flex:1 1 200px">Acordes encontrados: ${distinct.map(esc).join(', ')}. O BPM só define quantos acordes vão em cada linha.</p>
+        <p class="hint" style="margin:0;flex:1 1 200px">Acordes encontrados: ${distinct.map(esc).join(', ')}.</p>
       </div>
       ${audioUrl ? `<div style="margin:14px 0"><audio controls src="${audioUrl}" style="width:100%" id="cg-audio"></audio></div>` : ''}
       ${audioUrl || ctx.mode === 'tab' ? `<p>Acorde agora: <strong id="cg-follow" style="color:var(--chord);font-size:1.4rem">—</strong>
         ${ctx.mode === 'tab' ? '<span class="hint"> — dê play no vídeo do player para conferir de ouvido.</span>' : ''}</p>` : ''}
-      <div class="sheet" style="max-height:40vh;overflow:auto;margin:12px 0">${ctx.renderSheet(text)}</div>
+      <section id="cg-lyrics" style="margin:14px 0;padding:12px 14px;border:1px solid var(--line);border-radius:var(--radius-s)"></section>
+      <div class="sheet" id="cg-preview" style="max-height:40vh;overflow:auto;margin:12px 0"></div>
       <div class="row">
         <button class="btn primary" data-x="apply">${ctx.hasContent ? 'Substituir a cifra atual' : 'Usar esta cifra'}</button>
         ${ctx.hasContent ? '<button class="btn" data-x="append">Adicionar ao fim da cifra</button>' : ''}
       </div>`;
+    renderLyrics();
+    renderPreview();
+    if (lyr.status === 'idle') searchLyrics();
     const segAt = (t) => result.segments.find((x) => t >= x.start && t < x.end);
     clearInterval(follow);
     if (ctx.mode === 'tab' && ctx.player) {
@@ -364,17 +518,21 @@ export function openChordGenerator(ctx) {
         el.textContent = s && s.chord !== 'N' ? s.chord : '—';
       }, 200);
     }
-    const audio = d.querySelector('#cg-audio');
-    if (audio) {
-      audio.ontimeupdate = () => {
-        const s = result.segments.find((x) => audio.currentTime >= x.start && audio.currentTime < x.end);
+    const au = d.querySelector('#cg-audio');
+    if (au) {
+      au.ontimeupdate = () => {
+        const s = segAt(au.currentTime);
         d.querySelector('#cg-follow').textContent = s && s.chord !== 'N' ? s.chord : '—';
       };
     }
   };
 
   d.onchange = async (e) => {
-    if (e.target.id === 'cg-bpm') { bpm = Math.min(260, Math.max(30, Number(e.target.value) || 80)); drawResult(); return; }
+    const id = e.target.id;
+    if (id === 'cg-bpm') { bpm = Math.min(260, Math.max(30, Number(e.target.value) || 80)); renderPreview(); return; }
+    if (id === 'ly-inc') { lyr.include = e.target.checked; renderLyrics(); renderPreview(); return; }
+    if (id === 'ly-model') { lyr.model = Number(e.target.value); return; }
+    if (id === 'ly-lang') { lyr.lang = e.target.value; return; }
     if (e.target.dataset.x !== 'file' || !e.target.files[0]) return;
     const file = e.target.files[0];
     show('cg-work');
@@ -391,9 +549,11 @@ export function openChordGenerator(ctx) {
         const ch = buf.getChannelData(c);
         for (let i = 0; i < ch.length; i++) mono[i] += ch[i] / buf.numberOfChannels;
       }
+      duration = buf.duration;
       msg.textContent = `Analisando ${mmss(buf.duration)} de áudio…`;
       const { frames, hop } = await analyzeSamples(mono, buf.sampleRate, (p) => { bar.style.width = (p * 100) + '%'; });
       result = framesToChords(frames, { hop });
+      audio = { samples: mono, sampleRate: buf.sampleRate, toMusicTime: (w) => w };
       audioUrl = URL.createObjectURL(file);
       drawResult();
     } catch {
@@ -404,10 +564,11 @@ export function openChordGenerator(ctx) {
 
   async function startTab() {
     if (!canCaptureTab()) { ctx.toast('Capturar o áudio da aba só funciona no Chrome ou Edge do computador.'); return; }
+    const slow = d.querySelector('#cg-slow')?.checked;
     let stream;
     try {
       // abre o vídeo no player do site (parado) antes de pedir a captura
-      await ctx.player.play(ctx.song, { autoplay: false });
+      await ctx.player.play(song, { autoplay: false });
       stream = await captureThisTab();
     } catch (err) {
       ctx.toast(err.name === 'NoAudio' ? 'O áudio não foi compartilhado. Tente de novo e deixe marcada a opção de compartilhar o áudio da guia.'
@@ -415,12 +576,12 @@ export function openChordGenerator(ctx) {
       return;
     }
     const p = ctx.player.api();
+    const rates = p.getAvailablePlaybackRates?.() || [1];
+    const rate = slow ? 1 : rates.includes(2) ? 2 : Math.max(...rates);
     show('cg-work');
     d.querySelector('#cg-live').hidden = false;
-    d.querySelector('#cg-msg').textContent = 'Analisando o vídeo em 2x… pode deixar esta janela aberta.';
+    d.querySelector('#cg-msg').textContent = rate > 1 ? `Analisando o vídeo em ${rate}x… pode deixar esta janela aberta.` : 'Analisando o vídeo em velocidade normal… pode deixar esta janela aberta.';
     const bar = d.querySelector('#cg-bar');
-    const rates = p.getAvailablePlaybackRates?.() || [1];
-    const rate = rates.includes(2) ? 2 : Math.max(...rates);
     mic = new StreamChords();
     let done = false;
     tabRun = {
@@ -429,10 +590,12 @@ export function openChordGenerator(ctx) {
         done = true;
         ctx.player.setOnEnded(null);
         try { p.pauseVideo(); p.setPlaybackRate(1); } catch { /* ok */ }
-        const frames = mic ? mic.stop() : [];
+        const m = mic;
+        const frames = m ? m.stop() : [];
         mic = null; tabRun = null;
         if (aborted || !d.open) return;
         if (frames.length < 20) { show('cg-start'); ctx.toast('Ouvi muito pouco do vídeo. Confira se o áudio da guia foi compartilhado.'); return; }
+        audio = slow ? m.recording() : null;
         result = framesToChords(frames, { hop: 0.1 * rate });
         drawResult();
       },
@@ -440,6 +603,7 @@ export function openChordGenerator(ctx) {
     stream.getAudioTracks()[0].addEventListener('ended', () => tabRun?.finish(false));
     ctx.player.setOnEnded(() => tabRun?.finish(false));
     const dur = p.getDuration?.() || 0;
+    duration = dur;
     await mic.start(stream, (frame, frames) => {
       if (dur) bar.style.width = Math.min(100, (frame.t / dur) * 100) + '%';
       d.querySelector('#cg-time').textContent = `${mmss(frame.t)}${dur ? ' de ' + mmss(dur) : ''}`;
@@ -447,7 +611,7 @@ export function openChordGenerator(ctx) {
       const avg = new Array(12).fill(0);
       frames.slice(-4).forEach((f) => f.chroma.forEach((v, i) => { avg[i] += v; }));
       d.querySelector('#cg-now').textContent = chordName(classify(avg).label);
-    }, () => p.getCurrentTime?.() || 0);
+    }, () => p.getCurrentTime?.() || 0, { record: slow });
     p.seekTo(0, true);
     p.setPlaybackRate(rate);
     p.playVideo();
@@ -456,6 +620,9 @@ export function openChordGenerator(ctx) {
   d.onclick = async (e) => {
     const x = e.target.closest('[data-x]')?.dataset.x;
     if (x === 'close') d.close();
+    if (x === 'ly-minus' || x === 'ly-plus') { lyr.offset = Math.round((lyr.offset + (x === 'ly-plus' ? 0.5 : -0.5)) * 2) / 2; renderLyrics(); renderPreview(); }
+    if (x === 'ly-search') { lyr.title = d.querySelector('#ly-title').value.trim(); lyr.artist = d.querySelector('#ly-artist').value.trim(); searchLyrics(); }
+    if (x === 'whisper') runWhisper();
     if (x === 'mic-start') {
       if (!navigator.mediaDevices?.getUserMedia) { ctx.toast('Este navegador não dá acesso ao microfone.'); return; }
       show('cg-work');
@@ -473,7 +640,7 @@ export function openChordGenerator(ctx) {
           const avg = new Array(12).fill(0);
           recent.forEach((f) => f.chroma.forEach((v, i) => { avg[i] += v; }));
           d.querySelector('#cg-now').textContent = chordName(classify(avg).label);
-        });
+        }, null, { record: true });
       } catch (err) {
         mic = null; show('cg-start');
         ctx.toast(err.name === 'NotAllowedError' ? 'Permita o uso do microfone para gerar a cifra.' : 'Não foi possível usar o microfone.');
@@ -482,17 +649,22 @@ export function openChordGenerator(ctx) {
     if (x === 'tab-start') await startTab();
     if (x === 'tab-stop' && tabRun) tabRun.finish(false);
     if (x === 'mic-stop' && mic) {
-      const frames = mic.stop();
+      const m = mic;
+      const frames = m.stop();
       mic = null;
       if (frames.length < 20) { show('cg-start'); ctx.toast('Ouvi muito pouco. Deixe tocar por mais tempo.'); return; }
+      audio = m.recording();
       result = framesToChords(frames, { hop: 0.1 });
       drawResult();
     }
     if (x === 'apply' || x === 'append') {
-      ctx.onApply({ text: segmentsToChordPro(result.segments, bpm), key: result.key, bpm, append: x === 'append' });
+      ctx.onApply({ text: buildText(), key: result.key, bpm, append: x === 'append' });
       d.close();
     }
   };
   // No modo vídeo a janela não pode cobrir o player do YouTube: abre ao lado, sem fundo escuro.
-  if (ctx.mode === 'tab') { d.classList.add('side'); d.show(); } else d.showModal();
+  if (ctx.mode === 'tab') {
+    d.classList.add('side'); d.show();
+    searchLyrics().then(updatePreLyrics);
+  } else d.showModal();
 }

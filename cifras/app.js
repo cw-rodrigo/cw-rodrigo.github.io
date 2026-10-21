@@ -1,6 +1,6 @@
-import * as M from './music.js?v=4';
-import { toast, loadScript } from './util.js?v=4';
-import * as P from './player.js?v=4';
+import * as M from './music.js?v=5';
+import { toast, loadScript } from './util.js?v=5';
+import * as P from './player.js?v=5';
 
 const CAN_TAB = !!navigator.mediaDevices?.getDisplayMedia && !/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
 
@@ -204,27 +204,36 @@ function viewImport() {
   const st = importState;
   app.innerHTML = `
     <h1>Importar do YouTube</h1>
-    <p class="sub">Cole uma lista de links ou uma mensagem com texto e links misturados. Os links repetidos são ignorados.</p>
+    <p class="sub">Cole links de vídeos e de playlists, soltos ou dentro de uma mensagem. A ordem dos links é mantida, e cada playlist entra na ordem dela. Links repetidos são ignorados.</p>
     <label class="field"><span>Links ou mensagem</span>
       <textarea id="imp-text" placeholder="Ex.: Pessoal, o repertório de domingo:
 1. https://youtu.be/…
 2. Música tal → https://www.youtube.com/watch?v=…">${esc(st.text)}</textarea></label>
     <div class="row"><button class="btn primary" data-act="find">Encontrar músicas</button></div>
+    <div id="imp-pl" aria-live="polite"></div>
     <div class="import-results" id="imp-res"></div>`;
   const res = $('#imp-res');
 
+  const videos = () => st.items.filter((x) => x.type === 'video');
   const draw = () => {
     if (!st.items.length) { res.innerHTML = st.searched ? '<div class="empty" style="margin-top:16px"><p>Nenhum link do YouTube encontrado nesse texto.</p></div>' : ''; return; }
+    const n = videos().length;
     res.innerHTML = `
-      <h2>${st.items.length} ${st.items.length === 1 ? 'música encontrada' : 'músicas encontradas'}</h2>
-      <p class="hint">Confira artista e nome: eles são usados para buscar a cifra no Cifra Club depois.</p>
-      <ul class="rows">${st.items.map((it, i) => `
+      <h2>${n} ${n === 1 ? 'música encontrada' : 'músicas encontradas'}</h2>
+      <p class="hint">Confira artista e nome: eles são usados para buscar a cifra e a letra depois.</p>
+      <ul class="rows">${st.items.map((it, i) => it.type === 'playlist' ? `
+        <li data-i="${i}">
+          <div class="inputs"><strong style="grid-column:1/-1">Playlist${it.context ? ': ' + esc(it.context) : ''}</strong>
+            <span class="status">${esc(it.status || '')}</span></div>
+          <button class="btn icon ghost" data-act="drop" title="Remover da importação" aria-label="Remover">×</button>
+        </li>` : `
         <li data-i="${i}">
           <img class="thumb" alt="" loading="lazy" src="https://i.ytimg.com/vi/${it.id}/mqdefault.jpg">
           <div class="inputs">
             <label><span class="hint">Música</span><input type="text" data-f="title" placeholder="Nome da música" value="${esc(it.title)}"></label>
             <label><span class="hint">Artista</span><input type="text" data-f="artist" placeholder="Artista" value="${esc(it.artist)}"></label>
-            <span class="status">${esc(it.status || '')}</span>
+            <span class="status">${it.from ? `Da playlist${it.from === true ? '' : ' “' + esc(it.from) + '”'} · ` : ''}${esc(it.status || '')}
+              ${it.list && !it.from ? ' <button class="btn small" data-act="expand">Importar a playlist inteira</button>' : ''}</span>
           </div>
           <button class="btn icon ghost" data-act="drop" title="Remover da importação" aria-label="Remover">×</button>
         </li>`).join('')}</ul>
@@ -235,41 +244,69 @@ function viewImport() {
         <label class="field" id="imp-name-wrap"><span>Nome da nova lista</span>
           <input type="text" id="imp-name" value="Repertório ${new Date().toLocaleDateString('pt-BR')}"></label>
       </div>
-      <div class="row"><button class="btn primary" data-act="create">Adicionar ${st.items.length} ${st.items.length === 1 ? 'música' : 'músicas'}</button></div>`;
+      <div class="row"><button class="btn primary" data-act="create" ${n && !st.items.some((x) => x.type === 'playlist' && x.reading) ? '' : 'disabled'}>Adicionar ${n} ${n === 1 ? 'música' : 'músicas'}</button></div>`;
     $('#imp-dest').onchange = (e) => { $('#imp-name-wrap').hidden = !!e.target.value; };
   };
 
-  const setStatus = (i) => { const s = res.querySelector(`li[data-i="${i}"] .status`); if (s) s.textContent = st.items[i].status; };
-  const setField = (i) => {
-    const li = res.querySelector(`li[data-i="${i}"]`); if (!li) return;
-    for (const f of ['title', 'artist']) { const inp = li.querySelector(`[data-f="${f}"]`); if (inp && document.activeElement !== inp) inp.value = st.items[i][f]; }
+  const liOf = (it) => res.querySelector(`li[data-i="${st.items.indexOf(it)}"]`);
+  const setStatus = (it) => { const s = liOf(it)?.querySelector('.status'); if (s && !s.querySelector('button')) s.textContent = (it.from ? 'Da playlist · ' : '') + it.status; };
+  const setField = (it) => {
+    const li = liOf(it); if (!li) return;
+    for (const f of ['title', 'artist']) { const inp = li.querySelector(`[data-f="${f}"]`); if (inp && document.activeElement !== inp) inp.value = it[f]; }
   };
+
+  const mkVideo = (f, from = null) => {
+    const existing = Object.values(db.songs).find((s) => s.ytId === f.id);
+    return {
+      type: 'video', id: f.id, url: f.url, list: f.list || '', from,
+      existing: existing?.id || null,
+      title: existing?.title || f.context || '', artist: existing?.artist || '',
+      status: existing ? 'Já está na biblioteca: a cifra salva será reaproveitada.' : 'Buscando título…',
+      touched: !!existing, needsMeta: !existing,
+    };
+  };
+
+  async function loadMeta() {
+    const queue = videos().filter((it) => it.needsMeta);
+    queue.forEach((it) => { it.needsMeta = false; });
+    const worker = async () => {
+      for (let it = queue.shift(); it; it = queue.shift()) {
+        const meta = await fetchMeta(it.id);
+        if (meta) {
+          const sp = M.splitTitle(meta.title, meta.author);
+          if (!it.touched) { it.title = sp.title || it.title; it.artist = sp.artist || it.artist; setField(it); }
+          it.status = `No YouTube: “${meta.title}”`;
+        } else it.status = 'Não consegui ler o título deste vídeo. Preencha à mão.';
+        setStatus(it);
+      }
+    };
+    await Promise.all(Array.from({ length: 6 }, worker));
+  }
+
+  /** Troca o item da playlist pelos vídeos dela, na mesma posição e na ordem da playlist. */
+  async function resolvePlaylist(pl) {
+    pl.reading = true; pl.status = 'Lendo a playlist…'; draw();
+    let ids;
+    try { ids = await P.playlistVideoIds(pl.list, $('#imp-pl')); } catch {
+      pl.reading = false;
+      pl.status = 'Não consegui ler esta playlist. Ela pode ser privada ou um mix automático do YouTube.';
+      draw(); return;
+    }
+    const seen = new Set(videos().map((x) => x.id));
+    const vids = ids.filter((id) => !seen.has(id) && seen.add(id))
+      .map((id) => mkVideo({ id, url: `https://www.youtube.com/watch?v=${id}` }, pl.context || true));
+    st.items.splice(st.items.indexOf(pl), 1, ...vids);
+    draw();
+    loadMeta();
+  }
 
   async function find() {
     st.text = $('#imp-text').value;
     st.searched = true;
-    const found = M.extractYouTube(st.text);
-    st.items = found.map((f) => {
-      const existing = Object.values(db.songs).find((s) => s.ytId === f.id);
-      const guess = { title: f.context, artist: '' };
-      return {
-        ...f, existing: existing?.id || null,
-        title: existing?.title || guess.title || '', artist: existing?.artist || guess.artist || '',
-        status: existing ? 'Já está na biblioteca: a cifra salva será reaproveitada.' : 'Buscando título…',
-        touched: !!existing,
-      };
-    });
+    st.items = M.extractYouTubeItems(st.text).map((f) => (f.type === 'video' ? mkVideo(f) : { type: 'playlist', list: f.list, context: f.context, status: 'Na fila…' }));
     draw();
-    await Promise.all(st.items.map(async (it, i) => {
-      if (it.existing) return;
-      const meta = await fetchMeta(it.id);
-      if (meta) {
-        const sp = M.splitTitle(meta.title, meta.author);
-        if (!it.touched) { it.title = sp.title || it.title; it.artist = sp.artist || it.artist; setField(i); }
-        it.status = `No YouTube: “${meta.title}”`;
-      } else it.status = 'Não consegui ler o título deste vídeo. Preencha à mão.';
-      setStatus(i);
-    }));
+    loadMeta();
+    for (const pl of st.items.filter((x) => x.type === 'playlist')) await resolvePlaylist(pl);
   }
 
   app.oninput = (e) => {
@@ -282,11 +319,19 @@ function viewImport() {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'find') find();
     if (act === 'drop') { st.items.splice(Number(e.target.closest('li').dataset.i), 1); draw(); }
+    if (act === 'expand') {
+      const it = st.items[Number(e.target.closest('li').dataset.i)];
+      const pl = { type: 'playlist', list: it.list, context: it.title, status: '' };
+      st.items.splice(st.items.indexOf(it), 0, pl);
+      it.list = '';
+      st.items.splice(st.items.indexOf(it), 1);
+      resolvePlaylist(pl);
+    }
     if (act === 'create') {
       const destId = $('#imp-dest').value;
       const list = destId ? getList(destId) : newList($('#imp-name').value.trim() || 'Nova lista');
       const target = db.drafts[list.id] ? db.drafts[list.id].items : list.items;
-      for (const it of st.items) {
+      for (const it of videos()) {
         const song = it.existing ? getSong(it.existing) : newSong({ title: it.title || 'Sem título', artist: it.artist, ytId: it.id });
         if (!target.some((x) => x.songId === song.id)) target.push({ songId: song.id, shift: 0 });
       }
@@ -593,12 +638,12 @@ function viewSong(song, q) {
       case 'cc': openCifraClub(song, list); break;
       case 'more': openExportSong(song); break;
       case 'stage': {
-        const f = await import('./features.js?v=4');
+        const f = await import('./features.js?v=5');
         f.openStage({ song, html: renderSheet(transposedContent(song, view.shift)), keyLabel: keyLabel(song, view.shift), prefs: db.prefs, savePrefs: save, saveBpm: (b) => { song.bpm = b; save(); }, playVideo: () => P.play(song) });
         break;
       }
       case 'mic': {
-        const f = await import('./features.js?v=4');
+        const f = await import('./features.js?v=5');
         f.openMic({
           song, shownKey: shiftedKey(song, view.shift), originalKey: orig,
           lists: db.lists, currentList: list,
@@ -616,7 +661,7 @@ function viewSong(song, q) {
         break;
       }
       case 'notation': {
-        const f = await import('./features.js?v=4');
+        const f = await import('./features.js?v=5');
         f.openNotation({
           song, shift: view.shift, keyLabel: shiftedKey(song, view.shift) || 'C',
           saveMelody: (txt) => { song.melody = txt; song.updatedAt = Date.now(); save(); },
@@ -702,8 +747,8 @@ function viewEditor(id, q) {
 [G]Quando eu digo que dei[D/F#]xei de te amar">${esc(song.content)}</textarea></label>
         <div class="row" style="margin:-6px 0 6px"><button type="button" class="btn small" data-act="convert">Converter “acordes em cima da letra”</button>
           <button type="button" class="btn small ghost" data-act="cc">Buscar no Cifra Club</button></div>
-        <div class="row" style="margin:0 0 6px"><span class="hint">Gerar rascunho dos acordes:</span>
-          ${CAN_TAB ? '<button type="button" class="btn small" data-act="gen-tab">▶ Pelo vídeo (2x, sem baixar)</button>' : ''}
+        <div class="row" style="margin:0 0 6px"><span class="hint">Gerar rascunho (acordes e letra):</span>
+          ${CAN_TAB ? '<button type="button" class="btn small" data-act="gen-tab">▶ Pelo vídeo (sem baixar)</button>' : ''}
           <button type="button" class="btn small" data-act="gen-file">Pelo arquivo de áudio</button>
           <button type="button" class="btn small" data-act="gen-mic">🎤 Pelo microfone</button></div>
         <details class="help"><summary>Como escrever a cifra</summary>
@@ -766,7 +811,7 @@ function viewEditor(id, q) {
   function openGenerator(mode) {
     const yt = M.extractYouTube(form.yt.value)[0];
     if (mode === 'mic' || mode === 'file' || yt) { /* ok */ } else { toast('Cole o link do vídeo do YouTube no campo “Vídeo do YouTube” primeiro.'); form.yt.focus(); return; }
-    import('./chords.js?v=4').then((c) => c.openChordGenerator({
+    import('./chords.js?v=5').then((c) => c.openChordGenerator({
       mode,
       song: { id: song.id || 'novo', title: form.title.value, artist: form.artist.value, ytId: yt ? yt.id : '' },
       player: P,
@@ -809,7 +854,7 @@ function viewEditor(id, q) {
 
 // ---------- global ----------
 $('#mic-global').onclick = async () => {
-  const f = await import('./features.js?v=4');
+  const f = await import('./features.js?v=5');
   f.openMic({
     song: null, lists: db.lists, songs: Object.values(db.songs).filter((s) => songKey(s)),
     openSongInKey: (songId, k) => { location.hash = `#/cifra/${songId}?tom=${encodeURIComponent(k)}`; },

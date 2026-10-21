@@ -302,34 +302,56 @@ export function guessKey(text) {
 
 // ---------- YouTube ----------
 
-const YT_RE = /(?:https?:\/\/)?(?:www\.|m\.|music\.)?(?:youtube\.com\/(?:watch\?(?:[^\s#]*?&)?v=|shorts\/|embed\/|live\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])[^\s<>"')\]]*/g;
+const YT_TOKEN = /(?:https?:\/\/)?(?:[\w-]+\.)?(?:youtube\.com|youtu\.be)\/[^\s<>"')\]]*/gi;
+const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
+
+function parseYouTubeUrl(token) {
+  let u;
+  try { u = new URL(/^https?:/i.test(token) ? token : 'https://' + token); } catch { return null; }
+  const host = u.hostname.replace(/^(www|m|music)\./, '');
+  const list = u.searchParams.get('list') || '';
+  const parts = u.pathname.split('/').filter(Boolean);
+  let id = '';
+  if (host === 'youtu.be') id = parts[0] || '';
+  else if (parts[0] === 'watch') id = u.searchParams.get('v') || '';
+  else if (['shorts', 'embed', 'live', 'v'].includes(parts[0])) id = parts[1] || '';
+  else if (parts[0] === 'playlist' && list) return { type: 'playlist', list };
+  if (VIDEO_ID.test(id)) return { type: 'video', id, list };
+  return null;
+}
 
 /**
- * Encontra vídeos do YouTube em um texto livre (lista de links ou mensagem).
- * Retorna [{ id, url, context }] sem repetições, na ordem em que aparecem.
+ * Encontra vídeos e playlists do YouTube em um texto livre (lista de links ou mensagem),
+ * na ordem em que aparecem e sem repetições.
+ * Vídeo: { type:'video', id, url, list, context }; playlist: { type:'playlist', list, url, context }.
  * `context` é o texto da mesma linha sem o link — útil como título de reserva.
  */
-export function extractYouTube(text) {
+export function extractYouTubeItems(text) {
   const found = [];
   const seen = new Set();
   for (const line of String(text).split(/\r?\n/)) {
-    YT_RE.lastIndex = 0;
-    let m;
-    const matches = [];
-    while ((m = YT_RE.exec(line))) matches.push(m);
-    for (const mm of matches) {
-      const id = mm[1];
-      if (seen.has(id)) continue;
-      seen.add(id);
-      const context = line.replace(YT_RE, ' ')
-        .replace(/^[\s\d.)\-–—•*#:>]+/, '')
-        .replace(/[\s\-–—:|•]+$/, '')
-        .replace(/\s{2,}/g, ' ')
-        .trim();
-      found.push({ id, url: `https://www.youtube.com/watch?v=${id}`, context });
+    const tokens = line.match(YT_TOKEN) || [];
+    const context = line.replace(YT_TOKEN, ' ')
+      .replace(/^[\s\d.)\-–—•*#:>]+/, '')
+      .replace(/[\s\-–—:|•]+$/, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    for (const tok of tokens) {
+      const it = parseYouTubeUrl(tok);
+      if (!it) continue;
+      const k = it.type === 'video' ? 'v:' + it.id : 'p:' + it.list;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      if (it.type === 'video') found.push({ ...it, url: `https://www.youtube.com/watch?v=${it.id}`, context: tokens.length > 1 ? '' : context });
+      else found.push({ ...it, url: `https://www.youtube.com/playlist?list=${it.list}`, context });
     }
   }
   return found;
+}
+
+/** Só os vídeos (sem playlists). */
+export function extractYouTube(text) {
+  return extractYouTubeItems(text).filter((x) => x.type === 'video');
 }
 
 const NOISE = [

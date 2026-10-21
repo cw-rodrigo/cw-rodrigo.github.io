@@ -295,3 +295,7 @@ dialog.side {
 }
 @media (min-width: 900px) { dialog.side { width: min(640px, calc(100vw - 420px)); } }
 @media (max-width: 899px) { body.has-dock dialog.side { max-height: calc(100vh - 340px); } }
+.pl-reader { margin: 12px 0; width: 356px; max-width: 100%; aspect-ratio: 16/9; min-height: 200px; }
+.pl-reader iframe { width: 100%; height: 100%; border: 0; }
+.check { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+.check input { margin-top: .3em; flex: none; }
