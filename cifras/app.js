@@ -1,6 +1,6 @@
-import * as M from './music.js?v=9';
-import { toast, loadScript } from './util.js?v=9';
-import * as P from './player.js?v=9';
+import * as M from './music.js?v=10';
+import { toast, loadScript } from './util.js?v=10';
+import * as P from './player.js?v=10';
 
 const CAN_TAB = !!navigator.mediaDevices?.getDisplayMedia && !/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
 
@@ -513,9 +513,29 @@ document.addEventListener('click', (e) => {
   if (cur && getSong(cur.id)) location.hash = `#/cifra/${cur.id}${playingListId ? '?lista=' + playingListId : ''}`;
 });
 
+/**
+ * No Android, o app do Cifra Club "captura" os links do site e abre só a tela inicial dele.
+ * Lá, a busca é aberta à força no próprio navegador (link intent://), com a busca do Google como reserva.
+ */
+const ANDROID = /Android/i.test(navigator.userAgent);
+function browserPackage() {
+  const ua = navigator.userAgent;
+  if (/EdgA\//.test(ua)) return 'com.microsoft.emmx';
+  if (/SamsungBrowser\//.test(ua)) return 'com.sec.android.app.sbrowser';
+  if (/Firefox\//.test(ua)) return 'org.mozilla.firefox';
+  if (/OPR\//.test(ua)) return 'com.opera.browser';
+  return 'com.android.chrome';
+}
+function ccSearchAttrs(cc) {
+  if (!ANDROID) return `href="${cc.search}" target="_blank" rel="noopener"`;
+  const u = new URL(cc.search);
+  const intent = `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=${browserPackage()};S.browser_fallback_url=${encodeURIComponent(cc.google)};end`;
+  return `href="${esc(intent)}"`;
+}
+
 function ccButtons(s) {
   const cc = M.cifraClubLinks(s.artist, s.title);
-  return `<a class="btn small" href="${cc.search}" target="_blank" rel="noopener" title="Buscar esta música no Cifra Club" aria-label="Buscar ${esc(s.title)} no Cifra Club">🔍 Cifra Club</a>`;
+  return `<a class="btn small" ${ccSearchAttrs(cc)} title="Buscar esta música no Cifra Club" aria-label="Buscar ${esc(s.title)} no Cifra Club">🔍 Cifra Club</a>`;
 }
 
 function openExportList(list) {
@@ -624,7 +644,7 @@ function viewSong(song, q) {
     ${song.content ? `<div class="sheet" style="--lyric-size:${fontSize}rem">${renderSheet(transposedContent(song, view.shift))}</div>`
       : `<div class="empty"><p>Ainda não há cifra para esta música.</p>
         <div class="row" style="justify-content:center">
-          <a class="btn primary" href="${cc.search}" target="_blank" rel="noopener">Buscar no Cifra Club</a>
+          <a class="btn primary" ${ccSearchAttrs(cc)}>Buscar no Cifra Club</a>
           <a class="btn" href="#/editar/${song.id}${list ? '?volta=' + encodeURIComponent('/cifra/' + song.id + '?lista=' + list.id) : ''}">Colar ou escrever a cifra</a>
           ${CAN_TAB && song.ytId ? `<a class="btn" href="#/editar/${song.id}?gerar=aba${list ? '&volta=' + encodeURIComponent('/cifra/' + song.id + '?lista=' + list.id) : ''}">Gerar acordes pelo vídeo</a>` : ''}
         </div>
@@ -662,12 +682,12 @@ function viewSong(song, q) {
       case 'cc': openCifraClub(song, list); break;
       case 'more': openExportSong(song); break;
       case 'stage': {
-        const f = await import('./features.js?v=9');
+        const f = await import('./features.js?v=10');
         f.openStage({ song, html: renderSheet(transposedContent(song, view.shift)), keyLabel: keyLabel(song, view.shift), prefs: db.prefs, savePrefs: save, saveBpm: (b) => { song.bpm = b; save(); }, playVideo: () => P.play(song) });
         break;
       }
       case 'mic': {
-        const f = await import('./features.js?v=9');
+        const f = await import('./features.js?v=10');
         f.openMic({
           song, shownKey: shiftedKey(song, view.shift), originalKey: orig,
           lists: db.lists, currentList: list,
@@ -685,7 +705,7 @@ function viewSong(song, q) {
         break;
       }
       case 'notation': {
-        const f = await import('./features.js?v=9');
+        const f = await import('./features.js?v=10');
         f.openNotation({
           song, shift: view.shift, keyLabel: shiftedKey(song, view.shift) || 'C',
           saveMelody: (txt) => { song.melody = txt; song.updatedAt = Date.now(); save(); },
@@ -709,7 +729,7 @@ function openCifraClub(song, list) {
   dlg.innerHTML = `<h2>Cifra Club</h2>
     <p>Procurando <strong>${esc(song.title)}</strong>${song.artist ? ` de ${esc(song.artist)}` : ''}.</p>
     <div class="row">
-      <a class="btn primary" href="${cc.search}" target="_blank" rel="noopener">Buscar no Cifra Club</a>
+      <a class="btn primary" ${ccSearchAttrs(cc)}>Buscar no Cifra Club</a>
       <a class="btn" href="${cc.google}" target="_blank" rel="noopener">Buscar pelo Google</a>
     </div>
     <p class="hint">Na busca, escolha a versão certa da música. Depois copie a cifra (letra com acordes em cima) e cole no editor; ela é convertida automaticamente.</p>
@@ -834,7 +854,7 @@ function viewEditor(id, q) {
   function openGenerator(mode) {
     const yt = M.extractYouTube(form.yt.value)[0];
     if (mode === 'mic' || mode === 'file' || yt) { /* ok */ } else { toast('Cole o link do vídeo do YouTube no campo “Vídeo do YouTube” primeiro.'); form.yt.focus(); return; }
-    import('./chords.js?v=9').then((c) => c.openChordGenerator({
+    import('./chords.js?v=10').then((c) => c.openChordGenerator({
       mode,
       song: { id: song.id || 'novo', title: form.title.value, artist: form.artist.value, ytId: yt ? yt.id : '' },
       player: P,
@@ -864,7 +884,8 @@ function viewEditor(id, q) {
     if (act === 'cc') {
 
       const cc = M.cifraClubLinks(form.artist.value, form.title.value);
-      window.open(cc.search, '_blank', 'noopener');
+      if (ANDROID) location.href = ccSearchAttrs(cc).slice(6, -1).replace(/&amp;/g, '&');
+      else window.open(cc.search, '_blank', 'noopener');
     }
     if (act === 'del' && confirm('Excluir esta cifra da biblioteca e de todas as listas?')) {
       delete db.songs[song.id];
@@ -877,7 +898,7 @@ function viewEditor(id, q) {
 
 // ---------- global ----------
 $('#mic-global').onclick = async () => {
-  const f = await import('./features.js?v=9');
+  const f = await import('./features.js?v=10');
   f.openMic({
     song: null, lists: db.lists, songs: Object.values(db.songs).filter((s) => songKey(s)),
     openSongInKey: (songId, k) => { location.hash = `#/cifra/${songId}?tom=${encodeURIComponent(k)}`; },
