@@ -28,7 +28,7 @@ export async function to44kStereo(channels, sampleRate) {
 export async function separate(channels, sampleRate, onStatus = () => {}) {
   onStatus('Preparando o áudio…', 0);
   const [left, right] = await to44kStereo(channels, sampleRate);
-  worker ||= new Worker(new URL('./separate-worker.js?v=8', import.meta.url), { type: 'module' });
+  worker ||= new Worker(new URL('./separate-worker.js?v=9', import.meta.url), { type: 'module' });
   const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
   return new Promise((resolve, reject) => {
     worker.onmessage = (e) => {

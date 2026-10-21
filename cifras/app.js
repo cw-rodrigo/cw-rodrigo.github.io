@@ -1,6 +1,6 @@
-import * as M from './music.js?v=8';
-import { toast, loadScript } from './util.js?v=8';
-import * as P from './player.js?v=8';
+import * as M from './music.js?v=9';
+import { toast, loadScript } from './util.js?v=9';
+import * as P from './player.js?v=9';
 
 const CAN_TAB = !!navigator.mediaDevices?.getDisplayMedia && !/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
 
@@ -389,6 +389,7 @@ function viewList(list) {
         <span class="hint">Músicas em tom menor vão para o menor da mesma nota (ex.: A → Am).</span>
       </div>` : `
       <div class="row" style="margin-bottom:14px">
+        ${items.some((x) => getSong(x.songId)?.ytId) ? '<button class="btn primary" data-act="playall">▶ Tocar a lista</button>' : ''}
         <button class="btn" data-act="batch">Editar em lote</button>
         <button class="btn" data-act="add">Adicionar músicas</button>
         <button class="btn" data-act="export">Exportar</button>
@@ -458,8 +459,15 @@ function viewList(list) {
     const arr = editItems();
     switch (act) {
       case 'play': {
-        const queue = list.items.map((x) => getSong(x.songId)).filter((x) => x && x.ytId);
+        const queue = itemsOf(list).map((x) => getSong(x.songId)).filter((x) => x && x.ytId);
+        playingListId = list.id;
         P.play(getSong(btn.dataset.song), { queue });
+        break;
+      }
+      case 'playall': {
+        const queue = itemsOf(list).map((x) => getSong(x.songId)).filter((x) => x && x.ytId);
+        playingListId = list.id;
+        if (queue.length) P.play(queue[0], { queue });
         break;
       }
       case 'batch': db.drafts[list.id] = { items: list.items.map((x) => ({ ...x })), startedAt: Date.now() }; persist(); break;
@@ -488,12 +496,26 @@ function markPlaying() {
   const cur = P.current();
   $$('li[data-song]').forEach((li) => li.classList.toggle('playing', !!cur && li.dataset.song === cur.id));
 }
+let playingListId = null;
 P.onChange(markPlaying);
+// Tocando a lista com uma cifra dela aberta: ao passar para a próxima música, abre a cifra dela.
+P.onChange((song) => {
+  if (!song || !playingListId) return;
+  const { parts, q } = parseHash();
+  if (parts[0] === 'cifra' && q.lista === playingListId && parts[1] !== song.id) {
+    location.hash = `#/cifra/${song.id}?lista=${playingListId}`;
+  }
+});
+// Clicar no título do player abre a cifra da música que está tocando.
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.dock-title')) return;
+  const cur = P.current();
+  if (cur && getSong(cur.id)) location.hash = `#/cifra/${cur.id}${playingListId ? '?lista=' + playingListId : ''}`;
+});
 
 function ccButtons(s) {
   const cc = M.cifraClubLinks(s.artist, s.title);
-  return `${cc.direct ? `<a class="btn small" href="${cc.direct}" target="_blank" rel="noopener" title="Abrir a cifra no Cifra Club">Cifra Club</a>` : ''}
-    <a class="btn small icon" href="${cc.search}" target="_blank" rel="noopener" title="Buscar no Cifra Club" aria-label="Buscar ${esc(s.title)} no Cifra Club">🔍</a>`;
+  return `<a class="btn small" href="${cc.search}" target="_blank" rel="noopener" title="Buscar esta música no Cifra Club" aria-label="Buscar ${esc(s.title)} no Cifra Club">🔍 Cifra Club</a>`;
 }
 
 function openExportList(list) {
@@ -602,8 +624,7 @@ function viewSong(song, q) {
     ${song.content ? `<div class="sheet" style="--lyric-size:${fontSize}rem">${renderSheet(transposedContent(song, view.shift))}</div>`
       : `<div class="empty"><p>Ainda não há cifra para esta música.</p>
         <div class="row" style="justify-content:center">
-          ${cc.direct ? `<a class="btn primary" href="${cc.direct}" target="_blank" rel="noopener">Abrir no Cifra Club</a>` : ''}
-          <a class="btn" href="${cc.search}" target="_blank" rel="noopener">Buscar no Cifra Club</a>
+          <a class="btn primary" href="${cc.search}" target="_blank" rel="noopener">Buscar no Cifra Club</a>
           <a class="btn" href="#/editar/${song.id}${list ? '?volta=' + encodeURIComponent('/cifra/' + song.id + '?lista=' + list.id) : ''}">Colar ou escrever a cifra</a>
           ${CAN_TAB && song.ytId ? `<a class="btn" href="#/editar/${song.id}?gerar=aba${list ? '&volta=' + encodeURIComponent('/cifra/' + song.id + '?lista=' + list.id) : ''}">Gerar acordes pelo vídeo</a>` : ''}
         </div>
@@ -631,19 +652,22 @@ function viewSong(song, q) {
         song.key = shiftedKey(song, view.shift);
         if (song.melody) { try { song.melody = shiftMelodyText(song.melody, view.shift); } catch { /* melodia inválida fica como está */ } }
         song.updatedAt = Date.now(); view.shift = 0; save(); rerender(); break;
-      case 'video': P.play(song, { queue: items ? items.map((x) => getSong(x.songId)).filter((x) => x && x.ytId) : null }); break;
+      case 'video':
+        playingListId = list ? list.id : null;
+        P.play(song, { queue: items ? items.map((x) => getSong(x.songId)).filter((x) => x && x.ytId) : null });
+        break;
       case 'bigger': case 'smaller':
         db.prefs.fontSize = Math.min(2.2, Math.max(0.8, (db.prefs.fontSize || 1.12) + (btn.dataset.act === 'bigger' ? 0.1 : -0.1)));
         save(); $('.sheet')?.style.setProperty('--lyric-size', db.prefs.fontSize + 'rem'); break;
       case 'cc': openCifraClub(song, list); break;
       case 'more': openExportSong(song); break;
       case 'stage': {
-        const f = await import('./features.js?v=8');
+        const f = await import('./features.js?v=9');
         f.openStage({ song, html: renderSheet(transposedContent(song, view.shift)), keyLabel: keyLabel(song, view.shift), prefs: db.prefs, savePrefs: save, saveBpm: (b) => { song.bpm = b; save(); }, playVideo: () => P.play(song) });
         break;
       }
       case 'mic': {
-        const f = await import('./features.js?v=8');
+        const f = await import('./features.js?v=9');
         f.openMic({
           song, shownKey: shiftedKey(song, view.shift), originalKey: orig,
           lists: db.lists, currentList: list,
@@ -661,7 +685,7 @@ function viewSong(song, q) {
         break;
       }
       case 'notation': {
-        const f = await import('./features.js?v=8');
+        const f = await import('./features.js?v=9');
         f.openNotation({
           song, shift: view.shift, keyLabel: shiftedKey(song, view.shift) || 'C',
           saveMelody: (txt) => { song.melody = txt; song.updatedAt = Date.now(); save(); },
@@ -685,11 +709,10 @@ function openCifraClub(song, list) {
   dlg.innerHTML = `<h2>Cifra Club</h2>
     <p>Procurando <strong>${esc(song.title)}</strong>${song.artist ? ` de ${esc(song.artist)}` : ''}.</p>
     <div class="row">
-      ${cc.direct ? `<a class="btn primary" href="${cc.direct}" target="_blank" rel="noopener">Abrir página da música</a>` : ''}
-      <a class="btn" href="${cc.search}" target="_blank" rel="noopener">Buscar no Cifra Club</a>
+      <a class="btn primary" href="${cc.search}" target="_blank" rel="noopener">Buscar no Cifra Club</a>
       <a class="btn" href="${cc.google}" target="_blank" rel="noopener">Buscar pelo Google</a>
     </div>
-    <p class="hint">Se a página direta não existir, use a busca. Depois copie a cifra (letra com acordes em cima) e cole no editor; ela é convertida automaticamente.</p>
+    <p class="hint">Na busca, escolha a versão certa da música. Depois copie a cifra (letra com acordes em cima) e cole no editor; ela é convertida automaticamente.</p>
     <div class="row end"><button class="btn" data-x="close">Fechar</button><a class="btn" href="#/editar/${song.id}${back}">Abrir editor</a></div>`;
   dlg.onclick = (e) => { if (e.target.dataset.x === 'close') dlg.close(); };
   dlg.showModal();
@@ -811,7 +834,7 @@ function viewEditor(id, q) {
   function openGenerator(mode) {
     const yt = M.extractYouTube(form.yt.value)[0];
     if (mode === 'mic' || mode === 'file' || yt) { /* ok */ } else { toast('Cole o link do vídeo do YouTube no campo “Vídeo do YouTube” primeiro.'); form.yt.focus(); return; }
-    import('./chords.js?v=8').then((c) => c.openChordGenerator({
+    import('./chords.js?v=9').then((c) => c.openChordGenerator({
       mode,
       song: { id: song.id || 'novo', title: form.title.value, artist: form.artist.value, ytId: yt ? yt.id : '' },
       player: P,
@@ -841,7 +864,7 @@ function viewEditor(id, q) {
     if (act === 'cc') {
 
       const cc = M.cifraClubLinks(form.artist.value, form.title.value);
-      window.open(cc.direct || cc.search, '_blank', 'noopener');
+      window.open(cc.search, '_blank', 'noopener');
     }
     if (act === 'del' && confirm('Excluir esta cifra da biblioteca e de todas as listas?')) {
       delete db.songs[song.id];
@@ -854,7 +877,7 @@ function viewEditor(id, q) {
 
 // ---------- global ----------
 $('#mic-global').onclick = async () => {
-  const f = await import('./features.js?v=8');
+  const f = await import('./features.js?v=9');
   f.openMic({
     song: null, lists: db.lists, songs: Object.values(db.songs).filter((s) => songKey(s)),
     openSongInKey: (songId, k) => { location.hash = `#/cifra/${songId}?tom=${encodeURIComponent(k)}`; },

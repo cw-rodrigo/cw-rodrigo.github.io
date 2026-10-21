@@ -1,6 +1,6 @@
 // Recursos pesados, carregados só quando o usuário pede (microfone, modo rolagem, partitura/tab).
-import * as M from './music.js?v=8';
-import { toast, loadScript } from './util.js?v=8';
+import * as M from './music.js?v=9';
+import { toast, loadScript } from './util.js?v=9';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ABCJS_URL = 'https://cdn.jsdelivr.net/npm/abcjs@6/dist/abcjs-basic-min.js';
@@ -298,6 +298,7 @@ export function openStage(ctx) {
     if (e.key === 'ArrowDown') { speed = Math.max(0.2, speed - 0.1); showSpeed(); persist(); }
   };
   document.addEventListener('keydown', onKey);
+  window.addEventListener('hashchange', () => { if (el.isConnected) close(); }, { once: true });
 
   el.querySelector('#bpm').onchange = (e) => {
     bpm = Math.min(260, Math.max(30, Number(e.target.value) || 80));

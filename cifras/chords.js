@@ -1,7 +1,7 @@
 // Reconhecimento de acordes a partir de áudio (arquivo ou microfone), todo no navegador.
 // Carregado só quando o usuário pede.
-import * as M from './music.js?v=8';
-import * as LY from './lyrics.js?v=8';
+import * as M from './music.js?v=9';
+import * as LY from './lyrics.js?v=9';
 
 // ---------------- análise (sem dependência de navegador) ----------------
 
@@ -383,7 +383,8 @@ export function openChordGenerator(ctx) {
   let mic = null;
   let audioUrl = null;
   let result = null; // { key, segments }
-  let audio = null; // { samples, sampleRate, toMusicTime } para transcrever a letra
+  let audio = null; // { samples, sampleRate, toMusicTime, rate } para transcrever a letra
+  let rec = null; // áudio original (estéreo) para separar as faixas depois
   let duration = 0;
   let bpm = ctx.bpm || 80;
   let follow = null;
@@ -399,13 +400,13 @@ export function openChordGenerator(ctx) {
 
   const intro = ctx.mode === 'file'
     ? `<p>Escolha um arquivo de áudio (MP3, M4A, WAV…) de <strong>${esc(song.title || 'a música')}</strong>. A análise acontece no seu aparelho; o arquivo não é enviado para lugar nenhum.</p>
-       <label class="check" style="margin:8px 0"><input type="checkbox" id="cg-sep"> Separar voz e instrumentos com IA antes de analisar: acordes e letra ficam mais precisos (download de cerca de 85 MB na primeira vez e alguns minutos de processamento por música)</label>
+       <label class="check" style="margin:8px 0"><input type="checkbox" id="cg-sep"> Separar as faixas com IA para acordes mais precisos (sem voz, bateria e com o baixo ajudando). A letra continua vindo do banco quando ela existir. Mais lento: cerca de 85 MB na primeira vez e alguns minutos por música.</label>
        <label class="btn primary">Escolher arquivo de áudio<input type="file" accept="audio/*,video/mp4" data-x="file" hidden></label>`
     : ctx.mode === 'tab'
       ? `<p>O vídeo de <strong>${esc(song.title || 'a música')}</strong> toca no player do site e o app escuta o áudio desta aba. Nada é baixado.</p>
          <p id="cg-prelyr" class="hint">Procurando a letra no LRCLIB…</p>
          <label class="check" style="margin:8px 0"><input type="checkbox" id="cg-slow"> Analisar em velocidade normal, para transcrever a letra com IA (leva o tempo da música)</label>
-         <label class="check" style="margin:8px 0"><input type="checkbox" id="cg-sep"> Separar voz e instrumentos com IA antes de analisar: acordes e letra ficam mais precisos (download de cerca de 85 MB na primeira vez e alguns minutos de processamento por música)</label>
+         <label class="check" style="margin:8px 0"><input type="checkbox" id="cg-sep"> Separar as faixas com IA para acordes mais precisos (sem voz, bateria e com o baixo ajudando). A letra continua vindo do banco quando ela existir. Mais lento: cerca de 85 MB na primeira vez e alguns minutos por música.</label>
          <p class="hint">O navegador vai pedir para compartilhar esta aba: deixe marcada a opção de <strong>compartilhar o áudio da guia</strong>. O som fica mudo enquanto analisa.</p>
          <button class="btn primary" data-x="tab-start">Analisar o vídeo</button>`
       : `<p>Deixe a música tocar perto do microfone, ou toque você mesmo. Os acordes vão sendo anotados enquanto você ouve; pare quando a música acabar.</p>
@@ -447,7 +448,7 @@ export function openChordGenerator(ctx) {
     if (!audio) return;
     lyr.status = 'transcribing'; lyr.msg = 'Preparando o áudio…'; renderLyrics();
     try {
-      const W = await import('./whisper.js?v=8');
+      const W = await import('./whisper.js?v=9');
       const a16 = await W.to16k(audio.samples, audio.sampleRate);
       const chunks = await W.transcribe(a16, {
         model: W.MODELS[lyr.model].id, language: lyr.lang,
@@ -467,7 +468,7 @@ export function openChordGenerator(ctx) {
 
   const W_MODELS = ['Rápido (download menor)', 'Mais preciso (download maior, mais lento)'];
   function whisperControls() {
-    if (!audio) {
+    if (!audio || audio.rate > 1) {
       return ctx.mode === 'tab'
         ? '<p class="hint">Para transcrever a letra com IA, analise de novo marcando “velocidade normal”.</p>'
         : '';
@@ -553,6 +554,7 @@ export function openChordGenerator(ctx) {
       <section id="cg-lyrics" style="margin:14px 0;padding:12px 14px;border:1px solid var(--line);border-radius:var(--radius-s)"></section>
       <div class="sheet" id="cg-preview" style="max-height:40vh;overflow:auto;margin:12px 0"></div>
       <div class="row">
+        ${!result.separated && rec ? '<button class="btn" data-x="resep">Melhorar os acordes separando as faixas</button>' : ''}
         <button class="btn primary" data-x="apply">${ctx.hasContent ? 'Substituir a cifra atual' : 'Usar esta cifra'}</button>
         ${ctx.hasContent ? '<button class="btn" data-x="append">Adicionar ao fim da cifra</button>' : ''}
       </div>`;
@@ -580,13 +582,13 @@ export function openChordGenerator(ctx) {
   };
 
   /** Separa as faixas, refaz os acordes com baixo + harmonia e deixa a voz para a IA da letra. */
-  async function analyzeSeparated(rec, fallback) {
+  async function analyzeSeparated(rec, fallback = () => {}) {
     show('cg-work');
     d.querySelector('#cg-live').hidden = true;
     const msg = d.querySelector('#cg-msg');
     const bar = d.querySelector('#cg-bar');
     try {
-      const S = await import('./separate.js?v=8');
+      const S = await import('./separate.js?v=9');
       const stems = await S.separate(rec.channels, rec.sampleRate, (text, p) => { msg.textContent = text; bar.style.width = (p * 100) + '%'; });
       msg.textContent = 'Encontrando os acordes nas faixas separadas…';
       const { frames, hop } = await analyzeSamples(stems.other, 44100, (p) => { bar.style.width = (p * 100) + '%'; }, stems.bass);
@@ -594,8 +596,8 @@ export function openChordGenerator(ctx) {
       r.segments = r.segments.map((x) => ({ ...x, start: rec.toMusicTime(x.start), end: rec.toMusicTime(x.end) }));
       r.separated = true;
       result = r;
-      audio = { samples: stems.vocals, sampleRate: 44100, toMusicTime: rec.toMusicTime, vocals: true };
-      lyr.model = 1;
+      audio = { samples: stems.vocals, sampleRate: 44100, toMusicTime: rec.toMusicTime, vocals: true, rate: rec.rate || 1 };
+      if (lyr.status !== 'found') lyr.model = 1;
     } catch (err) {
       ctx.toast('Não foi possível separar as faixas (' + err.message + '). Usei a análise normal.');
       fallback();
@@ -605,12 +607,6 @@ export function openChordGenerator(ctx) {
 
   d.onchange = async (e) => {
     const id = e.target.id;
-    if (id === 'cg-sep' && ctx.mode === 'tab') {
-      const slow = d.querySelector('#cg-slow');
-      if (e.target.checked) slow.checked = true;
-      slow.disabled = e.target.checked;
-      return;
-    }
     if (id === 'cg-bpm') { bpm = Math.min(260, Math.max(30, Number(e.target.value) || 80)); renderPreview(); return; }
     if (id === 'ly-inc') { lyr.include = e.target.checked; renderLyrics(); renderPreview(); return; }
     if (id === 'ly-model') { lyr.model = Number(e.target.value); return; }
@@ -633,9 +629,9 @@ export function openChordGenerator(ctx) {
       }
       duration = buf.duration;
       audioUrl = URL.createObjectURL(file);
+      rec = { channels: [buf.getChannelData(0), buf.numberOfChannels > 1 ? buf.getChannelData(1) : buf.getChannelData(0)], sampleRate: buf.sampleRate, toMusicTime: (w) => w, rate: 1 };
       if (d.querySelector('#cg-sep')?.checked) {
-        const chans = [buf.getChannelData(0), buf.numberOfChannels > 1 ? buf.getChannelData(1) : buf.getChannelData(0)];
-        await analyzeSeparated({ channels: chans, sampleRate: buf.sampleRate, toMusicTime: (w) => w }, () => {});
+        await analyzeSeparated(rec, () => {});
         if (result) return;
       }
       msg.textContent = `Analisando ${mmss(buf.duration)} de áudio…`;
@@ -652,7 +648,7 @@ export function openChordGenerator(ctx) {
   async function startTab() {
     if (!canCaptureTab()) { ctx.toast('Capturar o áudio da aba só funciona no Chrome ou Edge do computador.'); return; }
     const sep = d.querySelector('#cg-sep')?.checked;
-    const slow = d.querySelector('#cg-slow')?.checked || sep;
+    const slow = d.querySelector('#cg-slow')?.checked;
     let stream;
     try {
       // abre o vídeo no player do site (parado) antes de pedir a captura
@@ -683,9 +679,11 @@ export function openChordGenerator(ctx) {
         mic = null; tabRun = null;
         if (aborted || !d.open) return;
         if (frames.length < 20) { show('cg-start'); ctx.toast('Ouvi muito pouco do vídeo. Confira se o áudio da guia foi compartilhado.'); return; }
-        audio = slow ? m.recording() : null;
+        rec = m.recording();
+        if (rec) rec.rate = rate;
+        audio = rec;
         const quick = () => { result = framesToChords(frames, { hop: 0.1 * rate }); };
-        if (sep && audio) { analyzeSeparated(audio, quick); return; }
+        if (sep && rec) { analyzeSeparated(rec, () => { quick(); }); return; }
         quick();
         drawResult();
       },
@@ -701,7 +699,7 @@ export function openChordGenerator(ctx) {
       const avg = new Array(12).fill(0);
       frames.slice(-4).forEach((f) => f.chroma.forEach((v, i) => { avg[i] += v; }));
       d.querySelector('#cg-now').textContent = chordName(classify(avg).label);
-    }, () => p.getCurrentTime?.() || 0, { record: slow });
+    }, () => p.getCurrentTime?.() || 0, { record: true });
     p.seekTo(0, true);
     p.setPlaybackRate(rate);
     p.playVideo();
@@ -713,6 +711,7 @@ export function openChordGenerator(ctx) {
     if (x === 'ly-minus' || x === 'ly-plus') { lyr.offset = Math.round((lyr.offset + (x === 'ly-plus' ? 0.5 : -0.5)) * 2) / 2; renderLyrics(); renderPreview(); }
     if (x === 'ly-search') { lyr.title = d.querySelector('#ly-title').value.trim(); lyr.artist = d.querySelector('#ly-artist').value.trim(); searchLyrics(); }
     if (x === 'whisper') runWhisper();
+    if (x === 'resep' && rec) analyzeSeparated(rec);
     if (x === 'mic-start') {
       if (!navigator.mediaDevices?.getUserMedia) { ctx.toast('Este navegador não dá acesso ao microfone.'); return; }
       show('cg-work');
@@ -744,6 +743,7 @@ export function openChordGenerator(ctx) {
       mic = null;
       if (frames.length < 20) { show('cg-start'); ctx.toast('Ouvi muito pouco. Deixe tocar por mais tempo.'); return; }
       audio = m.recording();
+      if (audio) { audio.rate = 1; rec = audio; }
       result = framesToChords(frames, { hop: 0.1 });
       drawResult();
     }
