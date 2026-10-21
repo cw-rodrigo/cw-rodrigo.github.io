@@ -1,7 +1,7 @@
 // Reconhecimento de acordes a partir de áudio (arquivo ou microfone), todo no navegador.
 // Carregado só quando o usuário pede.
-import * as M from './music.js?v=6';
-import * as LY from './lyrics.js?v=6';
+import * as M from './music.js?v=7';
+import * as LY from './lyrics.js?v=7';
 
 // ---------------- análise (sem dependência de navegador) ----------------
 
@@ -32,10 +32,10 @@ function fft(re, im) {
 }
 
 /** Cromagrama a partir de magnitudes lineares do espectro (só picos, 55–2000 Hz). */
-export function chromaFromMags(mags, binHz) {
+export function chromaFromMags(mags, binHz, loHz = 55, hiHz = 2000) {
   const chroma = new Array(12).fill(0);
-  const lo = Math.max(1, Math.ceil(55 / binHz));
-  const hi = Math.min(mags.length - 2, Math.floor(2000 / binHz));
+  const lo = Math.max(1, Math.ceil(loHz / binHz));
+  const hi = Math.min(mags.length - 2, Math.floor(hiHz / binHz));
   let max = 0;
   for (let i = lo; i <= hi; i++) if (mags[i] > max) max = mags[i];
   if (!max) return chroma;
@@ -85,28 +85,47 @@ function diatonicSet(key) {
 }
 
 /** Melhor acorde para um cromagrama. */
-export function classify(chroma, key) {
+/** Nota mais forte do baixo (ou -1 se o baixo estiver fraco/indefinido). */
+function bassNote(bass) {
+  if (!bass) return -1;
+  let total = 0, top = 0, pc = -1;
+  for (let i = 0; i < 12; i++) { total += bass[i]; if (bass[i] > top) { top = bass[i]; pc = i; } }
+  return total && top / total > 0.3 ? pc : -1;
+}
+
+/** Melhor acorde para um cromagrama. Com o cromagrama do baixo, a nota do baixo ajuda a decidir a fundamental. */
+export function classify(chroma, key, bass = null) {
   const n = Math.hypot(...chroma);
   if (!n) return { label: 'N', score: 0 };
   const c = chroma.map((x) => x / n);
   const dia = diatonicSet(key);
+  const bn = bassNote(bass);
   let best = null;
   for (const t of TEMPLATES) {
     let s = 0;
     for (let i = 0; i < 12; i++) s += c[i] * t.v[i];
     s *= t.bias;
     if (dia && dia.has(t.root + t.type)) s += 0.04;
+    if (bn >= 0) {
+      if (bn === t.root) s += 0.1;
+      else if (t.v[bn] > 0) s += 0.02; // baixo numa nota do acorde (inversão)
+      else s -= 0.05;
+    }
     if (!best || s > best.score) best = { root: t.root, type: t.type, score: s };
   }
-  return { ...best, label: best.root + ':' + best.type };
+  // inversão: baixo firme numa nota do acorde que não é a fundamental -> acorde com baixo (ex.: D/F#)
+  const tpl = TEMPLATES.find((t) => t.root === best.root && t.type === best.type);
+  const slash = bn >= 0 && bn !== best.root && tpl.v[bn] > 0 ? '/' + bn : '';
+  return { ...best, label: best.root + ':' + best.type + slash };
 }
 
 export function chordName(label, key) {
   if (label === 'N') return 'N';
-  const [r, t] = label.split(':');
+  const [r, rest] = label.split(':');
+  const [t, b] = rest.split('/');
   const k = key && M.parseKey(key);
-  const flats = k ? M.usesFlats(k.root, k.minor) : false;
-  return (flats ? M.FLATS : M.SHARPS)[Number(r)] + t;
+  const names = k && M.usesFlats(k.root, k.minor) ? M.FLATS : M.SHARPS;
+  return names[Number(r)] + t + (b !== undefined ? '/' + names[Number(b)] : '');
 }
 
 /**
@@ -126,10 +145,14 @@ export function framesToChords(frames, { hop = 0.1, minDur = 0.45 } = {}) {
   const labels = frames.map((f, i) => {
     if (f.energy <= silent) return 'N';
     const avg = new Array(12).fill(0);
+    const bass = f.bass ? new Array(12).fill(0) : null;
     for (let j = Math.max(0, i - W); j <= Math.min(frames.length - 1, i + W); j++) {
-      if (frames[j].energy > silent) frames[j].chroma.forEach((v, k) => { avg[k] += v; });
+      if (frames[j].energy > silent) {
+        frames[j].chroma.forEach((v, k) => { avg[k] += v; });
+        if (bass && frames[j].bass) frames[j].bass.forEach((v, k) => { bass[k] += v; });
+      }
     }
-    return classify(avg, key).label;
+    return classify(avg, key, bass).label;
   });
 
   // filtro de moda para tirar oscilações rápidas
@@ -197,10 +220,7 @@ export function segmentsToChordPro(segments, bpm = 80) {
   return out.join('\n') + '\n';
 }
 
-/** Analisa amostras mono. `onProgress(0..1)`; cede o processador de tempos em tempos. */
-export async function analyzeSamples(samples, sampleRate, onProgress = () => {}) {
-  const factor = Math.max(1, Math.round(sampleRate / 22050));
-  const sr = sampleRate / factor;
+function decimate(samples, factor) {
   const len = Math.floor(samples.length / factor);
   const x = new Float32Array(len);
   for (let i = 0; i < len; i++) {
@@ -208,6 +228,21 @@ export async function analyzeSamples(samples, sampleRate, onProgress = () => {})
     for (let k = 0; k < factor; k++) s += samples[i * factor + k];
     x[i] = s / factor;
   }
+  return x;
+}
+
+/**
+ * Analisa amostras mono. `onProgress(0..1)`; cede o processador de tempos em tempos.
+ * Com `bassSamples` (faixa do baixo separada), cada quadro ganha também o cromagrama do baixo.
+ */
+export async function analyzeSamples(samples, sampleRate, onProgress = () => {}, bassSamples = null) {
+  const factor = Math.max(1, Math.round(sampleRate / 22050));
+  const sr = sampleRate / factor;
+  const x = decimate(samples, factor);
+  const xb = bassSamples ? decimate(bassSamples, factor) : null;
+  const len = x.length;
+  const bre = xb ? new Float64Array(8192) : null, bim = xb ? new Float64Array(8192) : null;
+  const bmags = xb ? new Float64Array(4096) : null;
   const N = 8192;
   const hopN = 2048;
   const win = new Float64Array(N).map((_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (N - 1)));
@@ -220,7 +255,14 @@ export async function analyzeSamples(samples, sampleRate, onProgress = () => {})
     for (let i = 0; i < N; i++) { const v = x[start + i]; re[i] = v * win[i]; im[i] = 0; e += v * v; }
     fft(re, im);
     for (let i = 0; i < N / 2; i++) mags[i] = Math.hypot(re[i], im[i]);
-    frames.push({ t: (start + N / 2) / sr, chroma: chromaFromMags(mags, binHz), energy: Math.sqrt(e / N) });
+    const frame = { t: (start + N / 2) / sr, chroma: chromaFromMags(mags, binHz), energy: Math.sqrt(e / N) };
+    if (xb) {
+      for (let i = 0; i < N; i++) { bre[i] = xb[start + i] * win[i]; bim[i] = 0; }
+      fft(bre, bim);
+      for (let i = 0; i < N / 2; i++) bmags[i] = Math.hypot(bre[i], bim[i]);
+      frame.bass = chromaFromMags(bmags, binHz, 30, 330);
+    }
+    frames.push(frame);
     if (n % 40 === 0) { onProgress(start / len); await new Promise((r) => setTimeout(r, 0)); }
   }
   onProgress(1);
@@ -248,10 +290,13 @@ class StreamChords {
     this.pcmStart = null;
     this.timeline = [];
     if (record) {
-      const sp = this.ctx.createScriptProcessor(4096, 1, 1);
+      const sp = this.ctx.createScriptProcessor(4096, 2, 2);
+      this.pcmR = [];
       sp.onaudioprocess = (e) => {
         if (this.pcmStart === null) this.pcmStart = e.playbackTime;
-        this.pcm.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+        const ib = e.inputBuffer;
+        this.pcm.push(new Float32Array(ib.getChannelData(0)));
+        this.pcmR.push(new Float32Array(ib.numberOfChannels > 1 ? ib.getChannelData(1) : ib.getChannelData(0)));
       };
       src.connect(sp);
       sp.connect(this.ctx.destination); // a saída fica em silêncio; só precisa estar ligada
@@ -280,9 +325,11 @@ class StreamChords {
   recording() {
     if (!this.pcm.length) return null;
     const n = this.pcm.reduce((k, c) => k + c.length, 0);
-    const samples = new Float32Array(n);
+    const L = new Float32Array(n), R = new Float32Array(n);
     let o = 0;
-    for (const c of this.pcm) { samples.set(c, o); o += c.length; }
+    this.pcm.forEach((c, k) => { L.set(c, o); R.set(this.pcmR[k], o); o += c.length; });
+    const samples = new Float32Array(n);
+    for (let i = 0; i < n; i++) samples[i] = (L[i] + R[i]) / 2;
     const tl = this.timeline;
     const start = this.pcmStart || 0;
     const toMusicTime = (w) => {
@@ -294,7 +341,7 @@ class StreamChords {
       const a = tl[i - 1], b = tl[i];
       return a.t + ((c - a.ctx) / (b.ctx - a.ctx || 1)) * (b.t - a.t);
     };
-    return { samples, sampleRate: this.sampleRate || 48000, toMusicTime };
+    return { samples, channels: [L, R], sampleRate: this.sampleRate || 48000, toMusicTime };
   }
   stop() {
     clearInterval(this.timer);
@@ -352,11 +399,13 @@ export function openChordGenerator(ctx) {
 
   const intro = ctx.mode === 'file'
     ? `<p>Escolha um arquivo de áudio (MP3, M4A, WAV…) de <strong>${esc(song.title || 'a música')}</strong>. A análise acontece no seu aparelho; o arquivo não é enviado para lugar nenhum.</p>
+       <label class="check" style="margin:8px 0"><input type="checkbox" id="cg-sep"> Separar voz e instrumentos com IA antes de analisar: acordes e letra ficam mais precisos (download de cerca de 85 MB na primeira vez e alguns minutos de processamento por música)</label>
        <label class="btn primary">Escolher arquivo de áudio<input type="file" accept="audio/*,video/mp4" data-x="file" hidden></label>`
     : ctx.mode === 'tab'
       ? `<p>O vídeo de <strong>${esc(song.title || 'a música')}</strong> toca no player do site e o app escuta o áudio desta aba. Nada é baixado.</p>
          <p id="cg-prelyr" class="hint">Procurando a letra no LRCLIB…</p>
          <label class="check" style="margin:8px 0"><input type="checkbox" id="cg-slow"> Analisar em velocidade normal, para transcrever a letra com IA (leva o tempo da música)</label>
+         <label class="check" style="margin:8px 0"><input type="checkbox" id="cg-sep"> Separar voz e instrumentos com IA antes de analisar: acordes e letra ficam mais precisos (download de cerca de 85 MB na primeira vez e alguns minutos de processamento por música)</label>
          <p class="hint">O navegador vai pedir para compartilhar esta aba: deixe marcada a opção de <strong>compartilhar o áudio da guia</strong>. O som fica mudo enquanto analisa.</p>
          <button class="btn primary" data-x="tab-start">Analisar o vídeo</button>`
       : `<p>Deixe a música tocar perto do microfone, ou toque você mesmo. Os acordes vão sendo anotados enquanto você ouve; pare quando a música acabar.</p>
@@ -398,7 +447,7 @@ export function openChordGenerator(ctx) {
     if (!audio) return;
     lyr.status = 'transcribing'; lyr.msg = 'Preparando o áudio…'; renderLyrics();
     try {
-      const W = await import('./whisper.js?v=6');
+      const W = await import('./whisper.js?v=7');
       const a16 = await W.to16k(audio.samples, audio.sampleRate);
       const chunks = await W.transcribe(a16, {
         model: W.MODELS[lyr.model].id, language: lyr.lang,
@@ -406,7 +455,9 @@ export function openChordGenerator(ctx) {
       });
       const lines = LY.whisperToLines(chunks).map((l) => ({ ...l, t: audio.toMusicTime(l.t), end: audio.toMusicTime(l.end) }));
       if (!lines.length) throw new Error('vazio');
-      Object.assign(lyr, { status: 'found', lines, plain: '', source: 'transcrita por IA', include: true, offset: 0, info: 'Transcrita por IA — confira as palavras.' });
+      const aligned = lyr.plain && lyr.source === 'do LRCLIB' ? LY.alignPlainToTimed(lyr.plain, lines) : [];
+      if (aligned.length) Object.assign(lyr, { status: 'found', lines: aligned, include: true, offset: 0, info: lyr.info.replace(' (sem tempo)', '') + ' — tempo das linhas encontrado pela IA' });
+      else Object.assign(lyr, { status: 'found', lines, plain: '', source: 'transcrita por IA', include: true, offset: 0, info: 'Transcrita por IA — confira as palavras.' });
     } catch (err) {
       lyr.status = 'whisper-error';
       lyr.msg = err.message === 'vazio' ? 'A IA não reconheceu nenhuma letra.' : 'Não foi possível transcrever: ' + err.message;
@@ -424,8 +475,8 @@ export function openChordGenerator(ctx) {
     return `<div class="row" style="margin-top:8px">
       <select id="ly-model" style="width:auto">${W_MODELS.map((m, i) => `<option value="${i}" ${i === lyr.model ? 'selected' : ''}>${m}</option>`).join('')}</select>
       <select id="ly-lang" style="width:auto">${[['portuguese', 'Português'], ['english', 'Inglês'], ['spanish', 'Espanhol']].map(([v, l]) => `<option value="${v}" ${v === lyr.lang ? 'selected' : ''}>${l}</option>`).join('')}</select>
-      <button class="btn" data-x="whisper" ${lyr.status === 'transcribing' ? 'disabled' : ''}>Transcrever a letra com IA</button></div>
-      <p class="hint">A IA roda no seu aparelho. Voz com muitos instrumentos atrás gera erros; no celular pode demorar bastante.</p>`;
+      <button class="btn" data-x="whisper" ${lyr.status === 'transcribing' ? 'disabled' : ''}>${lyr.plain && !lyr.lines.length ? 'Encaixar a letra com IA' : 'Transcrever a letra com IA'}</button></div>
+      <p class="hint">A IA roda no seu aparelho${audio.vocals ? ' e vai ouvir só a faixa da voz' : '. Voz com muitos instrumentos atrás gera erros; separar as faixas antes ajuda'}. No celular pode demorar bastante.</p>`;
   }
 
   function renderLyrics() {
@@ -443,7 +494,7 @@ export function openChordGenerator(ctx) {
           <span style="min-width:4.5em;text-align:center;font-variant-numeric:tabular-nums">${lyr.offset > 0 ? '+' : ''}${lyr.offset.toFixed(1).replace('.', ',')} s</span>
           <button class="btn small icon" data-x="ly-plus" aria-label="Letra meio segundo depois">+</button>
           <span class="hint" style="flex:1 1 220px">Se os acordes caírem cedo ou tarde demais nas palavras, ajuste aqui.</span></div>`;
-      } else if (!lyr.lines.length && lyr.plain) html += '<p class="hint">Essa letra não tem tempo marcado: ela vai abaixo dos acordes, para você encaixar.</p>';
+      } else if (!lyr.lines.length && lyr.plain) html += `<p class="hint">Essa letra não tem tempo marcado: ela vai abaixo dos acordes. A IA pode ouvir a música e encaixar cada linha no tempo certo, mantendo o texto correto.</p>${whisperControls()}`;
       if (lyr.source === 'do LRCLIB') html += `<details style="margin-top:8px"><summary class="hint" style="cursor:pointer">Não é essa a letra?</summary>${whisperControls()}</details>`;
     } else {
       const why = lyr.status === 'error' ? `Não consegui consultar o LRCLIB: ${lyr.msg}.`
@@ -493,7 +544,7 @@ export function openChordGenerator(ctx) {
       <div class="row" style="align-items:flex-end;gap:18px">
         <div><span class="hint">Tom provável</span><div class="detected" style="font-size:2.2rem;margin:0">${esc(result.key)}</div></div>
         <label class="field" style="margin:0"><span>Andamento (BPM)</span><input type="number" id="cg-bpm" min="30" max="260" value="${bpm}" style="width:100px"></label>
-        <p class="hint" style="margin:0;flex:1 1 200px">Acordes encontrados: ${distinct.map(esc).join(', ')}.</p>
+        <p class="hint" style="margin:0;flex:1 1 200px">Acordes encontrados: ${distinct.map(esc).join(', ')}.${result.separated ? ' Analisados nas faixas separadas (baixo e harmonia, sem voz e bateria).' : ''}</p>
       </div>
       ${audioUrl ? `<div style="margin:14px 0"><audio controls src="${audioUrl}" style="width:100%" id="cg-audio"></audio></div>` : ''}
       ${audioUrl || ctx.mode === 'tab' ? `<p>Acorde agora: <strong id="cg-follow" style="color:var(--chord);font-size:1.4rem">—</strong>
@@ -527,8 +578,38 @@ export function openChordGenerator(ctx) {
     }
   };
 
+  /** Separa as faixas, refaz os acordes com baixo + harmonia e deixa a voz para a IA da letra. */
+  async function analyzeSeparated(rec, fallback) {
+    show('cg-work');
+    d.querySelector('#cg-live').hidden = true;
+    const msg = d.querySelector('#cg-msg');
+    const bar = d.querySelector('#cg-bar');
+    try {
+      const S = await import('./separate.js?v=7');
+      const stems = await S.separate(rec.channels, rec.sampleRate, (text, p) => { msg.textContent = text; bar.style.width = (p * 100) + '%'; });
+      msg.textContent = 'Encontrando os acordes nas faixas separadas…';
+      const { frames, hop } = await analyzeSamples(stems.other, 44100, (p) => { bar.style.width = (p * 100) + '%'; }, stems.bass);
+      const r = framesToChords(frames, { hop });
+      r.segments = r.segments.map((x) => ({ ...x, start: rec.toMusicTime(x.start), end: rec.toMusicTime(x.end) }));
+      r.separated = true;
+      result = r;
+      audio = { samples: stems.vocals, sampleRate: 44100, toMusicTime: rec.toMusicTime, vocals: true };
+      lyr.model = 1;
+    } catch (err) {
+      ctx.toast('Não foi possível separar as faixas (' + err.message + '). Usei a análise normal.');
+      fallback();
+    }
+    if (result) drawResult();
+  }
+
   d.onchange = async (e) => {
     const id = e.target.id;
+    if (id === 'cg-sep' && ctx.mode === 'tab') {
+      const slow = d.querySelector('#cg-slow');
+      if (e.target.checked) slow.checked = true;
+      slow.disabled = e.target.checked;
+      return;
+    }
     if (id === 'cg-bpm') { bpm = Math.min(260, Math.max(30, Number(e.target.value) || 80)); renderPreview(); return; }
     if (id === 'ly-inc') { lyr.include = e.target.checked; renderLyrics(); renderPreview(); return; }
     if (id === 'ly-model') { lyr.model = Number(e.target.value); return; }
@@ -550,11 +631,16 @@ export function openChordGenerator(ctx) {
         for (let i = 0; i < ch.length; i++) mono[i] += ch[i] / buf.numberOfChannels;
       }
       duration = buf.duration;
+      audioUrl = URL.createObjectURL(file);
+      if (d.querySelector('#cg-sep')?.checked) {
+        const chans = [buf.getChannelData(0), buf.numberOfChannels > 1 ? buf.getChannelData(1) : buf.getChannelData(0)];
+        await analyzeSeparated({ channels: chans, sampleRate: buf.sampleRate, toMusicTime: (w) => w }, () => {});
+        if (result) return;
+      }
       msg.textContent = `Analisando ${mmss(buf.duration)} de áudio…`;
       const { frames, hop } = await analyzeSamples(mono, buf.sampleRate, (p) => { bar.style.width = (p * 100) + '%'; });
       result = framesToChords(frames, { hop });
       audio = { samples: mono, sampleRate: buf.sampleRate, toMusicTime: (w) => w };
-      audioUrl = URL.createObjectURL(file);
       drawResult();
     } catch {
       show('cg-start');
@@ -564,7 +650,8 @@ export function openChordGenerator(ctx) {
 
   async function startTab() {
     if (!canCaptureTab()) { ctx.toast('Capturar o áudio da aba só funciona no Chrome ou Edge do computador.'); return; }
-    const slow = d.querySelector('#cg-slow')?.checked;
+    const sep = d.querySelector('#cg-sep')?.checked;
+    const slow = d.querySelector('#cg-slow')?.checked || sep;
     let stream;
     try {
       // abre o vídeo no player do site (parado) antes de pedir a captura
@@ -596,7 +683,9 @@ export function openChordGenerator(ctx) {
         if (aborted || !d.open) return;
         if (frames.length < 20) { show('cg-start'); ctx.toast('Ouvi muito pouco do vídeo. Confira se o áudio da guia foi compartilhado.'); return; }
         audio = slow ? m.recording() : null;
-        result = framesToChords(frames, { hop: 0.1 * rate });
+        const quick = () => { result = framesToChords(frames, { hop: 0.1 * rate }); };
+        if (sep && audio) { analyzeSeparated(audio, quick); return; }
+        quick();
         drawResult();
       },
     };

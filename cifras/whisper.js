@@ -32,7 +32,7 @@ async function pickDevice() {
 }
 
 function run(audio16k, model, language, device, onStatus) {
-  worker ||= new Worker(new URL('./whisper-worker.js?v=6', import.meta.url), { type: 'module' });
+  worker ||= new Worker(new URL('./whisper-worker.js?v=7', import.meta.url), { type: 'module' });
   const files = {};
   return new Promise((resolve, reject) => {
     worker.onmessage = (e) => {
