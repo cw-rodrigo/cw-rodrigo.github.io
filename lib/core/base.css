@@ -1,0 +1,83 @@
+/* Estilos compartilhados por cima do Bootstrap: player fixo, cifra, gráficos, mixer, editor da pedaleira. */
+:root { --lyric-size: 1.12rem; --chord: var(--bs-primary); }
+body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; }
+[hidden] { display: none !important; }
+main.wide { max-width: 1400px; }
+.app-nav .pm-pill { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.time-in { max-width: 6.5rem; }
+.work { padding: .75rem 1rem; border: 1px solid var(--bs-border-color); border-radius: var(--bs-border-radius); background: var(--bs-tertiary-bg); }
+
+/* Player fixo do YouTube */
+.dock {
+  position: fixed; right: 12px; bottom: 12px; z-index: 1040;
+  width: min(380px, calc(100vw - 24px));
+  background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: var(--bs-border-radius-lg);
+  box-shadow: var(--bs-box-shadow); overflow: hidden;
+}
+.dock-bar { display: flex; align-items: center; gap: 2px; padding: 4px 4px 4px 12px; }
+.dock-title { flex: 1; min-width: 0; line-height: 1.25; cursor: pointer; }
+.dock-title strong, .dock-title small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-title small { color: var(--bs-secondary-color); font-size: .82rem; }
+.dock-title:hover strong { text-decoration: underline; }
+.dock-video { aspect-ratio: 16 / 9; min-height: 200px; background: #000; }
+.dock-video iframe { width: 100%; height: 100%; border: 0; display: block; }
+body.has-dock main { padding-bottom: 340px !important; }
+body.stage-open .dock { top: 12px; bottom: auto; }
+.pl-reader { position: fixed; left: 12px; bottom: 12px; z-index: 1040; background: #000; border-radius: var(--bs-border-radius); overflow: hidden; }
+.pl-reader iframe { display: block; }
+
+/* Painel lateral (não cobre o player) */
+.side-panel.offcanvas-start { --bs-offcanvas-width: min(640px, 100vw); box-shadow: var(--bs-box-shadow-lg); }
+@media (min-width: 900px) { .side-panel.offcanvas-start { --bs-offcanvas-width: min(640px, calc(100vw - 420px)); } }
+@media (max-width: 899px) { body.has-dock .side-panel { bottom: 330px; } }
+
+/* Cifra */
+.sheet {
+  background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: var(--bs-border-radius-lg);
+  padding: 22px 20px 28px; font-size: var(--lyric-size); line-height: 1.35; overflow-x: auto;
+}
+.sheet.small-sheet { --lyric-size: 1rem; max-height: 40vh; overflow: auto; padding: 14px; }
+.sheet .ln { white-space: pre-wrap; min-height: 1.35em; }
+.sheet .ln.has-ch { white-space: normal; margin-top: .25em; }
+.sheet .seg { display: inline-flex; flex-direction: column; vertical-align: bottom; }
+.sheet .seg .ch { font-weight: 700; color: var(--chord); min-height: 1.2em; padding-right: .45em; white-space: pre; }
+.sheet .seg .tx { white-space: pre; }
+.sheet .chords-only .ch { display: inline-block; margin-right: .9em; font-weight: 700; color: var(--chord); }
+.sheet .section { font-weight: 700; color: var(--bs-secondary-color); margin: 1em 0 .2em; }
+.sheet .section::before { content: ""; display: inline-block; width: 4px; height: .9em; background: var(--chord); margin-right: 8px; border-radius: 2px; vertical-align: -1px; }
+.sheet .tab { font-family: var(--bs-font-monospace); font-size: .85em; white-space: pre; color: var(--bs-secondary-color); }
+.sheet .gap { height: .8em; }
+
+/* Gráfico de curvas */
+.chart-box svg { width: 100%; height: auto; display: block; }
+.chart-box .grid { stroke: var(--bs-border-color); stroke-width: 1; }
+.chart-box .lbl { fill: var(--bs-secondary-color); font-size: 11px; }
+.c-a { stroke: var(--bs-primary); stroke-width: 2.5; fill: none; }
+.c-b { stroke: var(--bs-orange); stroke-width: 2.5; fill: none; stroke-dasharray: 6 4; }
+.c-ref { stroke: var(--bs-secondary-color); stroke-width: 1.5; fill: none; stroke-dasharray: 2 4; }
+.c-diff { stroke: var(--bs-success); stroke-width: 2; fill: none; }
+.swatch { display: inline-block; width: 18px; height: 0; border-top: 3px solid; vertical-align: middle; margin-right: 6px; }
+.swatch.c-a { border-color: var(--bs-primary); }
+.swatch.c-b { border-color: var(--bs-orange); border-top-style: dashed; }
+.swatch.c-ref { border-color: var(--bs-secondary-color); border-top-style: dotted; }
+.swatch.c-diff { border-color: var(--bs-success); }
+
+/* Mixer de faixas */
+.stem-row .stem-name { width: 8rem; flex: none; }
+.stem-row .form-range, .stem-mixer [data-m=seek] { width: auto; flex: 1 1 120px; min-width: 0; }
+.stem-mixer [data-m=time] { white-space: nowrap; }
+@media (max-width: 575px) { .stem-row .stem-name { width: 100%; } }
+
+/* Editor da Pocket Master */
+.pm-block.is-off .card-body { opacity: .5; }
+.chip-list { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Impressão */
+#print { display: none; }
+@media print {
+  body > *:not(#print) { display: none !important; }
+  #print { display: block; }
+  #print .song { break-after: page; }
+  #print .sheet { border: 0; padding: 0; font-size: 11pt; }
+  #print .sheet .seg .ch { color: #000; }
+}

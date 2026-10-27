@@ -1,0 +1,53 @@
+/* Estilos das seções (o resto vem do Bootstrap e de /lib/core/base.css). */
+
+/* Início */
+.tile { transition: transform .12s, box-shadow .12s; }
+.tile:hover { transform: translateY(-2px); box-shadow: var(--bs-box-shadow-sm); }
+.tile .bi { font-size: 1.6rem; }
+
+/* Listas de músicas */
+.song-rows .list-group-item { display: flex; align-items: center; gap: .75rem; }
+.song-rows .main { flex: 1; min-width: 0; text-decoration: none; color: inherit; }
+.song-rows .main strong, .song-rows .main small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.song-rows .main small { color: var(--bs-secondary-color); }
+.song-rows .num { width: 1.6em; text-align: right; color: var(--bs-secondary-color); font-variant-numeric: tabular-nums; }
+.song-rows .handle { cursor: grab; color: var(--bs-secondary-color); padding: 6px 2px; touch-action: none; user-select: none; }
+.song-rows .ctrls { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
+.song-rows .ghost { opacity: .4; }
+.song-rows .playing { background: var(--bs-primary-bg-subtle); }
+.song-rows .playing .main strong::before { content: "♪ "; color: var(--bs-primary); }
+.song-rows .thumb { width: 72px; aspect-ratio: 16/9; object-fit: cover; border-radius: var(--bs-border-radius); background: var(--bs-secondary-bg); flex: none; }
+@media (max-width: 640px) {
+  .song-rows .list-group-item { flex-wrap: wrap; row-gap: 6px; }
+  .song-rows .main { flex-basis: calc(100% - 70px); }
+  .song-rows .ctrls { flex-basis: 100%; justify-content: flex-start; padding-left: 2.4rem; }
+  .song-rows.plain .ctrls { padding-left: 0; }
+}
+.keybadge { font-weight: 700; white-space: nowrap; }
+.keybadge .from { font-weight: 400; opacity: .7; }
+
+/* Cifra */
+.keyctl .bigkey { font-size: 1.5rem; font-weight: 700; color: var(--bs-primary); min-width: 4.5rem; text-align: center; }
+.pager a { min-width: 0; }
+.pager a span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notation { overflow-x: auto; background: #fff; border-radius: var(--bs-border-radius); padding: 6px; color: #111; }
+@media (min-width: 1000px) { .editor-preview { position: sticky; top: 80px; max-height: calc(100vh - 100px); overflow: auto; } }
+textarea.code { font-family: var(--bs-font-monospace); font-size: .92rem; }
+
+/* Modo rolagem */
+.stage { position: fixed; inset: 0; z-index: 1050; display: flex; flex-direction: column; background: var(--bs-body-bg); }
+.stage .scroller { flex: 1; overflow-y: auto; }
+.stage .sheet { border: 0; border-radius: 0; background: transparent; max-width: 900px; margin: 0 auto; padding: 38vh 20px 70vh; }
+.stage .guide { position: absolute; left: 0; right: 0; top: 34vh; height: 0; border-top: 2px dashed rgba(var(--bs-primary-rgb), .45); pointer-events: none; }
+.stage .ln, .stage .section, .stage .chords-only { transition: opacity .2s; opacity: .55; }
+.stage .now { opacity: 1; }
+.stage .now .tx { text-decoration: underline 3px rgba(var(--bs-primary-rgb), .55); text-underline-offset: 6px; }
+.stage .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); background: var(--bs-tertiary-bg); border-top: 1px solid var(--bs-border-color); }
+.beat { display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: var(--bs-secondary-bg); border: 1px solid var(--bs-border-color); }
+.beat.on { background: var(--bs-primary); }
+.beat.on.accent { background: var(--bs-warning); }
+
+/* Timbres */
+.macro { display: grid; grid-template-columns: 8rem 1fr 5.5rem; align-items: center; gap: .5rem; min-height: 2.4rem; }
+.macro output { text-align: right; font-size: .9rem; color: var(--bs-secondary-color); font-variant-numeric: tabular-nums; }
+.macro select, .macro input[type=number] { grid-column: 2 / 4; }
