@@ -133,9 +133,12 @@ export function openStage(ctx) {
 
 export function openNotation(ctx) {
   const { song } = ctx;
-  let synth = null;
-  let visual = null;
-  const stop = () => { try { synth?.stop(); } catch { /* ok */ } synth = null; const b = m.body.querySelector('[data-x="play"]'); if (b) b.textContent = '▶ Tocar melodia (piano)'; };
+  let player = null; // { synths, timer }
+  const stop = () => {
+    if (player) { clearTimeout(player.timer); player.synths.forEach((x) => x.destroy()); }
+    player = null;
+    const b = m.body.querySelector('[data-x="play"]'); if (b) b.textContent = '▶ Tocar melodia (piano)';
+  };
   const m = modal({ title: `Partitura e tab · ${song.title}`, size: 'xl', onClose: stop });
   const d = m.body;
 
@@ -171,7 +174,7 @@ export function openNotation(ctx) {
       const opts = { responsive: 'resize', add_classes: true, paddingtop: 10, paddingbottom: 10 };
       if (d.querySelector('[data-r="inst"]').value === 'guitar') opts.tablature = [{ instrument: 'guitar', label: 'Violão', tuning: ['E,', 'A,', 'D', 'G', 'B', 'e'], highestNote: "a'" }];
       paper.innerHTML = '';
-      visual = window.ABCJS.renderAbc(paper, abc, opts)[0];
+      window.ABCJS.renderAbc(paper, abc, opts);
     } catch (err) {
       paper.innerHTML = `<p class="p-2">${esc(err.message || 'Não foi possível desenhar a partitura.')}</p>`;
     }
@@ -189,20 +192,45 @@ export function openNotation(ctx) {
       ctx.saveMelody(txt); draw();
     }
     if (x === 'play') {
-      if (synth) { stop(); return; }
-      if (!visual || !window.ABCJS?.synth?.supportsAudio()) { toast('Este navegador não consegue tocar a melodia.'); return; }
+      if (player) { stop(); return; }
       e.target.textContent = 'Carregando som…';
-      try {
-        synth = new window.ABCJS.synth.CreateSynth();
-        const click = d.querySelector('#nt-click').checked;
-        await synth.init({ visualObj: visual, options: { program: 0, ...(click ? { drum: 'dddd 76 77 77 77 110 70 70 70', drumBars: 1, drumIntro: 1 } : {}) } });
-        await synth.prime();
-        e.target.textContent = '■ Parar';
-        synth.start();
-      } catch {
-        stop(); toast('Não foi possível carregar o som do piano.');
-      }
+      try { player = await playMelody(M.transposeMelody(M.parseMelody(song.melody), ctx.shift), song.bpm || 80, d.querySelector('#nt-click').checked, stop); } catch { stop(); toast('Este navegador não consegue tocar a melodia.'); return; }
+      e.target.textContent = '■ Parar';
     }
   };
   draw();
+}
+
+/**
+ * Toca a melodia com o sintetizador do site (piano elétrico FM) e, se pedido, um compasso de
+ * contagem e o metrônomo. Retorna { synths, timer } para parar.
+ */
+async function playMelody(notes, bpm, click, onEnd) {
+  const [{ Synth }, { PRESETS }, { resumeAudio }] = await Promise.all([import('/lib/synth/synth.js'), import('/lib/synth/presets.js'), import('/lib/audio/context.js')]);
+  const ctx = await resumeAudio();
+  const spb = 60 / bpm;
+  const piano = await Synth.create(ctx, { engine: 'fm', params: { ...PRESETS.fm.find((p) => p.name === 'Piano elétrico (DX)').params }, fx: { reverbMix: 0.15 } });
+  piano.connect(ctx.destination);
+  const synths = [piano];
+  const t0 = ctx.currentTime + 0.15 + (click ? 4 * spb : 0);
+  const evs = [];
+  let t = 0;
+  for (const n of notes) {
+    if (n.bar) continue;
+    if (!n.rest) evs.push({ type: 'note', note: n.midi, vel: 95, at: t0 + t * spb }, { type: 'off', note: n.midi, at: t0 + (t + n.dur * 0.95) * spb });
+    t += n.dur;
+  }
+  piano.events(evs);
+  if (click) {
+    const drums = await Synth.create(ctx, { engine: 'drums', params: {}, fx: { reverbMix: 0 } });
+    drums.connect(ctx.destination);
+    synths.push(drums);
+    const clicks = [];
+    for (let b = -4; b < Math.ceil(t); b++) {
+      const at = t0 + b * spb, note = ((b % 4) + 4) % 4 === 0 ? 75 : 37; // clave no 1, aro nos outros
+      clicks.push({ type: 'note', note, vel: note === 75 ? 110 : 90, at }, { type: 'off', note, at: at + 0.05 });
+    }
+    drums.events(clicks);
+  }
+  return { synths, timer: setTimeout(onEnd, (t0 - ctx.currentTime + t * spb + 1) * 1000) };
 }

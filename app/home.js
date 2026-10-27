@@ -31,7 +31,7 @@ export default {
           <span class="small text-body-secondary">${tones} ${tones === 1 ? 'timbre guardado' : 'timbres guardados'}</span></div></a></div>
         <div class="col"><a class="card h-100 text-decoration-none tile border-primary" href="#/daw"><div class="card-body">
           <div class="d-flex align-items-center gap-2"><i class="bi bi-boombox text-primary"></i><h2 class="h4 mb-0 text-body">DAW</h2></div>
-          <p class="text-body-secondary mt-2 mb-0">Grave a Pocket Master pela entrada USB dela e componha com o sintetizador: faixas, loop, metrônomo, piano roll, mixer e exportação em WAV.</p></div></a></div>
+          <p class="text-body-secondary mt-2 mb-0">No jeito do FL Studio: Channel Rack com sequenciador de passos, padrões, playlist, piano roll, mixer com efeitos e automação. Grave a Pocket Master pela entrada USB dela direto na playlist.</p></div></a></div>
         <div class="col"><a class="card h-100 text-decoration-none tile border-primary" href="#/sintetizador"><div class="card-body">
           <div class="d-flex align-items-center gap-2"><i class="bi bi-keyboard text-primary"></i><h2 class="h4 mb-0 text-body">Sintetizador</h2></div>
           <p class="text-body-secondary mt-2 mb-0">Tudo em um: subtrativo, aditivo, FM, AM, wavetable, phase distortion, formantes, granular, modelagem física, sampler (General MIDI), bateria e NES no estilo FamiTracker.</p></div></a></div>

@@ -17,7 +17,7 @@ export default {
       if (!u) {
         el.innerHTML = `<div class="row justify-content-center"><div class="col-md-7 col-lg-5">
           <h1 class="h2">Conta</h1>
-          <p class="text-body-secondary">Com uma conta, suas cifras, listas, timbres e cópias da pedaleira ficam salvos na nuvem e aparecem em qualquer aparelho. Sem conta, tudo continua funcionando, salvo só neste navegador.</p>
+          <p class="text-body-secondary">Com uma conta, suas cifras, listas, timbres, presets do sintetizador e cópias da pedaleira ficam salvos na nuvem e aparecem em qualquer aparelho. Sem conta, tudo continua funcionando, salvo só neste navegador.</p>
           <ul class="nav nav-tabs mb-3" role="tablist">
             <li class="nav-item" role="presentation"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-in" type="button" role="tab">Entrar</button></li>
             <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-up" type="button" role="tab">Criar conta</button></li>

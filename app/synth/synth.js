@@ -4,7 +4,7 @@ import { ENGINES, ENGINE_IDS } from '/lib/synth/schemas.js';
 import { synthPanel, presetStore } from '/lib/synth/ui.js';
 import { pianoKeyboard, qwertyKeys, midiKeyboards, noteLabel } from '/lib/synth/keyboard.js';
 import { audioCtx, resumeAudio } from '/lib/audio/context.js';
-import { $, esc } from '/lib/core/ui.js';
+import { $, esc, debounce } from '/lib/core/ui.js';
 
 const synths = {}; // um instrumento por página (o tudo-em-um e cada tipo), mantidos ao navegar
 const lastKey = (eng) => (eng ? 'e:' + eng : 'all');
@@ -17,8 +17,7 @@ async function getSynth(locked) {
   const ctx = audioCtx();
   const s = await Synth.create(ctx, state);
   s.connect(ctx.destination);
-  let t = 0;
-  s.on((st) => { clearTimeout(t); t = setTimeout(() => { presetStore.data.last = { ...(presetStore.data.last || {}), [key]: { engine: st.engine, params: st.params, fx: st.fx } }; presetStore.save(); }, 800); });
+  s.on(debounce((st) => { presetStore.data.last = { ...(presetStore.data.last || {}), [key]: { engine: st.engine, params: st.params, fx: st.fx } }; presetStore.save(); }, 800));
   synths[key] = s;
   return s;
 }

@@ -115,7 +115,6 @@ S.onRemote(() => { if (active && !dirtyFn()) render(view, route); });
 
 function render(el, r) {
   view = el; route = r; active = true; dirtyFn = () => false;
-  el.onclick = el.oninput = el.onchange = null;
   const [a, b] = r.parts;
   if (!a) viewHome();
   else if (a === 'importar') viewImport();
@@ -156,11 +155,11 @@ function viewHome() {
         <small>${it.length} ${it.length === 1 ? 'música' : 'músicas'}${names ? ' — ' + esc(names) + (it.length > 3 ? '…' : '') : ''}</small></span>
         ${db.drafts[l.id] ? '<span class="badge text-bg-warning">não salva</span>' : ''}<i class="bi bi-chevron-right text-body-secondary"></i></a>`;
     }).join('')}</div>`
-      : '<div class="text-center border border-2 border-dashed rounded-3 p-4 mb-4 text-body-secondary"><p>Nenhuma lista ainda.</p><a class="btn btn-primary" href="#/cifras/importar">Importar músicas do YouTube</a></div>'}
+      : '<div class="text-center border border-2 border-dashed rounded-3 p-4 mb-4 text-body-secondary"><p>Nenhuma lista ainda.</p><a class="btn btn-primary" href="${H}/importar">Importar músicas do YouTube</a></div>'}
     <h2 class="h5">Biblioteca</h2>
     <div class="list-group mb-4"><a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" href="${H}/musicas"><span><strong>Todas as músicas</strong><br><small class="text-body-secondary">${count} ${count === 1 ? 'cifra salva' : 'cifras salvas'}</small></span><i class="bi bi-chevron-right"></i></a></div>
     <h2 class="h5">Backup</h2>
-    <p class="small text-body-secondary">Tudo fica salvo neste navegador${'' /* a conta sincroniza */} e, se você <a href="#/conta">entrar na sua conta</a>, também na nuvem. O backup em arquivo leva os dados para qualquer lugar.</p>
+    <p class="small text-body-secondary">Tudo fica salvo neste navegador e, se você <a href="#/conta">entrar na sua conta</a>, também na nuvem. O backup em arquivo leva os dados para qualquer lugar.</p>
     <div class="d-flex flex-wrap gap-2">
       <button class="btn btn-outline-secondary btn-sm" type="button" data-act="backup"><i class="bi bi-download"></i> Exportar backup</button>
       <label class="btn btn-outline-secondary btn-sm mb-0"><i class="bi bi-upload"></i> Importar backup<input type="file" accept=".json,application/json" data-act="restore" hidden></label>
@@ -180,7 +179,7 @@ function viewHome() {
     try {
       const data = JSON.parse(await e.target.files[0].text());
       if (!data.songs || !data.lists) throw new Error();
-      for (const s of Object.values(data.songs)) { db.songs[s.id] = { ...s, updatedAt: Math.max(s.updatedAt || 0, Date.now()) }; delete db.deleted[s.id]; }
+      for (const s of Object.values(data.songs)) { db.songs[s.id] = { ...s, updatedAt: Date.now() }; delete db.deleted[s.id]; }
       for (const l of data.lists) { const i = db.lists.findIndex((x) => x.id === l.id); const nl = { ...l, updatedAt: Date.now() }; if (i >= 0) db.lists[i] = nl; else db.lists.push(nl); delete db.deleted[l.id]; }
       save(); toast(`Backup importado: ${Object.keys(data.songs).length} cifras e ${data.lists.length} listas.`); viewHome();
     } catch { toast('Esse arquivo não é um backup válido do Cifras.', 'danger'); }
@@ -778,7 +777,7 @@ function viewEditor(id, q) {
     const btn = e.target.closest('[data-act]');
     if (!btn) return;
     const act = btn.dataset.act;
-    if (act === 'guess') { const g = M.guessKey(ta.value); if (g) { form.key.value = g; dirty = true; toast(`Tom sugerido pelo primeiro acorde: ${g}.`); } else toast('Não encontrei acordes para sugerir o tom.'); }
+    if (act === 'guess') { const g = M.guessKey(ta.value); if (g) { form.key.value = g; dirty = true; toast(`Tom sugerido pelos acordes: ${g}.`); } else toast('Não encontrei acordes para sugerir o tom.'); }
     if (act === 'gen-file' || act === 'gen-mic' || act === 'gen-tab') openGenerator(act.slice(4));
     if (act === 'convert') { ta.value = M.chordsOverLyricsToChordPro(ta.value); dirty = true; preview(); }
     if (act === 'cc') window.open(ccUrl(ccLinks(form.artist.value, form.title.value)), '_blank', 'noopener');

@@ -2,13 +2,14 @@
 // compara com a música e corrige o equalizador e o ganho aos poucos.
 import { Recorder, mono, getInput, listInputs } from '/lib/audio/io.js';
 import { analyzeTone, curveMean } from '/lib/audio/tone.js';
+import { PEDAL_NAME } from '/lib/pocketmaster/pm.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const bandFreq = (name) => { const m = /([\d.]+)\s*(k?)hz/i.exec(name); return m ? parseFloat(m[1]) * (m[2] ? 1000 : 1) : null; };
 
 export { listInputs };
 export function guessPedalInput(inputs) {
-  return inputs.find((d) => /pocket|sonicake|qme/i.test(d.label)) || inputs.find((d) => /usb/i.test(d.label)) || null;
+  return inputs.find((d) => PEDAL_NAME.test(d.label)) || inputs.find((d) => /usb/i.test(d.label)) || null;
 }
 
 /**

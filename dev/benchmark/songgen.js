@@ -1,6 +1,6 @@
 // Gerador de músicas de teste com a "resposta" conhecida (tom, acordes, afinação, andamento).
 // Serve para medir e calibrar a cifragem automática: o som sai dos mesmos motores do sintetizador.
-import { renderNotes, presetParams } from './render.js';
+import { renderNotes, presetParams } from '../../lib/synth/render.js';
 
 export function rng(seed) {
   let s = (Math.imul((seed >>> 0) + 0x9e3779b9, 2654435761) >>> 0) || 1;

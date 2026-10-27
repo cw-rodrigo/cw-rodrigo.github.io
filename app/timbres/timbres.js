@@ -2,14 +2,14 @@
 import * as T from './tone.js';
 import { startRefine, listInputs, guessPedalInput } from './refine.js';
 import { analyzeTone, tempoEstimate } from '/lib/audio/tone.js';
-import { mono, playSamples } from '/lib/audio/io.js';
+import { mono, playSamples, getInput } from '/lib/audio/io.js';
 import { audioSource } from '/lib/widgets/source.js';
 import { drawCurves } from '/lib/widgets/chart.js';
 import * as PM from '/lib/pocketmaster/session.js';
-import { LABELS, USER_PRESETS, cleanName, slotLabel } from '/lib/pocketmaster/pm.js';
+import { LABELS, USER_PRESETS, NAME_LEN, cleanName, slotLabel } from '/lib/pocketmaster/pm.js';
 import { blockEditor, applyEdit } from '/lib/pocketmaster/editor.js';
 import { syncedStore, mergeArrays, mergeTombs } from '/lib/core/sync.js';
-import { $, esc, toast, download, slug, confirmBox, progressHtml, setProgress, busyButton } from '/lib/core/ui.js';
+import { $, esc, toast, download, slug, confirmBox, progressHtml, setProgress, busyButton, debounce } from '/lib/core/ui.js';
 
 const S = syncedStore('timbres', 'timbres.v1', { tones: [], prefs: {}, deleted: {} }, (a, b) => {
   const deleted = mergeTombs(a.deleted, b.deleted);
@@ -250,7 +250,7 @@ function renderSpec(withEditor = false) {
   if (withEditor && $('#adv')?.open) editor.render(s);
 }
 
-const sendSoon = (() => { let t; return () => { clearTimeout(t); t = setTimeout(sendDiff, 180); }; })();
+const sendSoon = debounce(() => sendDiff(), 180);
 /** Algo mudou no timbre: atualiza o resumo e, se estiver "ao vivo", manda para a pedaleira. */
 function changed(rerenderEditor = false) {
   st.dirty = true;
@@ -265,7 +265,7 @@ function renderPedal() {
   const box = $('#pedal');
   if (!box) return;
   if (!PM.canConnect()) {
-    box.innerHTML = PM.connectButtonsHtml().replace('</div>', ' Enquanto isso, dá para montar o preset à mão com o resumo acima.</div>');
+    box.innerHTML = `${PM.connectButtonsHtml()}<p class="small text-body-secondary mt-2 mb-0">Enquanto isso, dá para montar o preset à mão com o resumo acima.</p>`;
     return;
   }
   const pm = PM.device();
@@ -298,7 +298,7 @@ function renderPedal() {
         <h3 class="h6">Salvar na pedaleira</h3>
         <div class="row g-2">
           <div class="col-sm-7"><label class="form-label small mb-0" for="pm-slot">Preset</label><select class="form-select form-select-sm" id="pm-slot">${Array.from({ length: USER_PRESETS }, (_, i) => `<option value="${i}"${i === slot ? ' selected' : ''}>${slotLabel(i)} · ${esc(pm.names[i] || '')}</option>`).join('')}</select></div>
-          <div class="col-sm-5"><label class="form-label small mb-0" for="pm-name">Nome</label><input class="form-control form-control-sm" type="text" id="pm-name" maxlength="10" value="${esc(nm)}"></div>
+          <div class="col-sm-5"><label class="form-label small mb-0" for="pm-name">Nome</label><input class="form-control form-control-sm" type="text" id="pm-name" maxlength="${NAME_LEN}" value="${esc(nm)}"></div>
         </div>
         <button class="btn btn-outline-primary btn-sm mt-2" type="button" data-p="save"><i class="bi bi-save"></i> Salvar</button>
         <p class="small text-body-secondary mt-2 mb-0">Até 10 letras, sem acentos. Uma cópia do preset que estava lá fica em <a href="#/ferramentas/pedaleira">Pocket Master → cópias de segurança</a>.</p>
@@ -381,7 +381,7 @@ async function fillInputs() {
 async function toggleRefine() {
   if (st.refine) { stopRefine(); renderPedal(); return; }
   if (!$('#pm-input').value) {
-    try { const s = await navigator.mediaDevices.getUserMedia({ audio: true }); s.getTracks().forEach((t) => t.stop()); } catch { toast('Permita o uso da entrada de áudio para o ajuste fino.', 'warning'); return; }
+    try { const s = await getInput(); s.getTracks().forEach((t) => t.stop()); } catch { toast('Permita o uso da entrada de áudio para o ajuste fino.', 'warning'); return; }
     await fillInputs();
     if (!$('#pm-input').value) { toast('Escolha a entrada de áudio da pedaleira (Pocket Master / USB) e toque em Começar de novo.'); return; }
   }

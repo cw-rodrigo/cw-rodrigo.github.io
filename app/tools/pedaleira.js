@@ -1,7 +1,7 @@
 // Ferramenta: editor da Sonicake Pocket Master pelo USB ou Bluetooth.
 import * as PM from '/lib/pocketmaster/session.js';
 import { blockEditor, applyEdit } from '/lib/pocketmaster/editor.js';
-import { slotLabel, cleanName, USER_PRESETS } from '/lib/pocketmaster/pm.js';
+import { slotLabel, cleanName, USER_PRESETS, TOTAL_PRESETS, NAME_LEN } from '/lib/pocketmaster/pm.js';
 import { $, esc, toast, download, slug, confirmBox, busyButton } from '/lib/core/ui.js';
 
 let active = false;
@@ -53,7 +53,7 @@ function draw() {
     <div class="card mb-3"><div class="card-body">
       <div class="row g-2 align-items-end">
         <div class="col-md-5"><label class="form-label small mb-0" for="pm-preset">Preset</label>
-          <select class="form-select" id="pm-preset"><optgroup label="Do usuário">${Array.from({ length: 50 }, (_, i) => opt(i)).join('')}</optgroup><optgroup label="De fábrica">${Array.from({ length: 50 }, (_, i) => opt(i + 50)).join('')}</optgroup></select></div>
+          <select class="form-select" id="pm-preset"><optgroup label="Do usuário">${Array.from({ length: USER_PRESETS }, (_, i) => opt(i)).join('')}</optgroup><optgroup label="De fábrica">${Array.from({ length: TOTAL_PRESETS - USER_PRESETS }, (_, i) => opt(i + USER_PRESETS)).join('')}</optgroup></select></div>
         <div class="col-md-3"><label class="form-label small mb-0 d-flex justify-content-between" for="pm-vol"><span>Volume do preset</span><output id="pm-vol-out">${shown.preset_volume ?? 50}</output></label><input class="form-range" type="range" id="pm-vol" min="0" max="100" value="${shown.preset_volume ?? 50}"></div>
         <div class="col-md-4 d-flex flex-wrap gap-2 justify-content-md-end">
           <button class="btn btn-outline-secondary btn-sm" type="button" data-a="reload" title="Descartar as mudanças e recarregar o preset salvo"><i class="bi bi-arrow-counterclockwise"></i> Desfazer</button>
@@ -67,8 +67,8 @@ function draw() {
     <div class="card"><div class="card-body">
       <h2 class="h6">Salvar</h2>
       <div class="row g-2 align-items-end">
-        <div class="col-sm-5"><label class="form-label small mb-0" for="pm-slot">Preset do usuário</label><select class="form-select form-select-sm" id="pm-slot">${Array.from({ length: USER_PRESETS }, (_, i) => `<option value="${i}"${i === (pm.current < 50 ? pm.current : 0) ? ' selected' : ''}>${slotLabel(i)} · ${esc(pm.names[i] || '')}</option>`).join('')}</select></div>
-        <div class="col-sm-4"><label class="form-label small mb-0" for="pm-name">Nome (até 10 letras)</label><input class="form-control form-control-sm" id="pm-name" maxlength="10" value="${esc(pm.current < 50 ? pm.names[pm.current] || '' : '')}"></div>
+        <div class="col-sm-5"><label class="form-label small mb-0" for="pm-slot">Preset do usuário</label><select class="form-select form-select-sm" id="pm-slot">${Array.from({ length: USER_PRESETS }, (_, i) => `<option value="${i}"${i === (pm.current < USER_PRESETS ? pm.current : 0) ? ' selected' : ''}>${slotLabel(i)} · ${esc(pm.names[i] || '')}</option>`).join('')}</select></div>
+        <div class="col-sm-4"><label class="form-label small mb-0" for="pm-name">Nome (até 10 letras)</label><input class="form-control form-control-sm" id="pm-name" maxlength="${NAME_LEN}" value="${esc(pm.current < USER_PRESETS ? pm.names[pm.current] || '' : '')}"></div>
         <div class="col-sm-3"><button class="btn btn-primary btn-sm w-100" type="button" data-a="save"><i class="bi bi-save"></i> Salvar</button></div>
       </div>
     </div></div>`;
