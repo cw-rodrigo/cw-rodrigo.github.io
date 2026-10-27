@@ -1,4 +1,4 @@
-// Ferramenta: editor da Sonicake Pocket Master pelo USB.
+// Ferramenta: editor da Sonicake Pocket Master pelo USB ou Bluetooth.
 import * as PM from '/lib/pocketmaster/session.js';
 import { blockEditor, applyEdit } from '/lib/pocketmaster/editor.js';
 import { slotLabel, cleanName, USER_PRESETS } from '/lib/pocketmaster/pm.js';
@@ -21,7 +21,7 @@ export default {
   render(el) {
     active = true;
     el.innerHTML = `<div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
-        <div><h1 class="h2 mb-1">Pocket Master</h1><p class="text-body-secondary mb-0">Editor da Sonicake Pocket Master pelo USB (Web MIDI). Projeto não oficial.</p></div>
+        <div><h1 class="h2 mb-1">Pocket Master</h1><p class="text-body-secondary mb-0">Editor da Sonicake Pocket Master pelo USB (Web MIDI) ou Bluetooth (Web Bluetooth). Projeto não oficial.</p></div>
       </div>
       <div id="pm-main"></div>
       <section class="mt-4"><h2 class="h5">Cópias de segurança</h2><p class="small text-body-secondary">Antes de salvar por cima de um preset (aqui ou no Timbres), uma cópia do que estava lá fica guardada${''} — e vai para a sua conta, se você tiver entrado.</p><div id="pm-backups"></div></section>`;
@@ -34,16 +34,16 @@ export default {
 function draw() {
   const box = $('#pm-main');
   if (!box) return;
-  if (!PM.midiSupported()) { box.innerHTML = '<div class="alert alert-secondary">Este navegador não conversa com aparelhos USB (MIDI). Use o Chrome ou o Edge, no computador ou no Android.</div>'; return; }
   const pm = PM.device();
   if (!pm) {
     shown = null;
-    box.innerHTML = `<div class="card"><div class="card-body"><p>Ligue a Pocket Master no USB com um cabo USB-C para USB-C e conecte.</p>
-      <button class="btn btn-primary" type="button" id="pm-connect"><i class="bi bi-usb-symbol"></i> Conectar a pedaleira</button>
-      <p class="small text-body-secondary mt-2 mb-0">O navegador vai pedir permissão para usar aparelhos MIDI.</p></div></div>`;
-    $('#pm-connect').onclick = async (e) => {
-      busyButton(e.currentTarget, true, 'Conectando…');
-      try { await PM.connect(); } catch (err) { toast(PM.connectError(err), 'danger'); draw(); }
+    box.innerHTML = `<div class="card"><div class="card-body"><p>Conecte a Pocket Master:</p>${PM.connectButtonsHtml()}</div></div>`;
+    box.oninput = box.onchange = null;
+    box.onclick = async (e) => {
+      const b = e.target.closest('[data-connect]');
+      if (!b) return;
+      busyButton(b, true, 'Conectando…');
+      try { await PM.connect(b.dataset.connect); } catch (err) { toast(PM.connectError(err), 'danger'); draw(); }
     };
     return;
   }
@@ -61,7 +61,7 @@ function draw() {
           <label class="btn btn-outline-secondary btn-sm mb-0"><i class="bi bi-upload"></i> Importar<input type="file" accept="application/json,.json" id="pm-import" hidden></label>
         </div>
       </div>
-      <p class="small text-body-secondary mt-2 mb-0">As mudanças vão na hora para o preset em edição. Para manter, salve abaixo.</p>
+      <p class="small text-body-secondary mt-2 mb-0">Conectada pelo ${pm.via === 'ble' ? '<i class="bi bi-bluetooth"></i> Bluetooth' : '<i class="bi bi-usb-symbol"></i> USB'} (${esc(pm.name)}) · <button class="btn btn-link btn-sm p-0 align-baseline" type="button" data-a="disconnect">desconectar</button>. As mudanças vão na hora para o preset em edição; para manter, salve abaixo.</p>
     </div></div>
     <div id="pm-editor" class="mb-3"></div>
     <div class="card"><div class="card-body">
@@ -109,6 +109,7 @@ function draw() {
   box.onclick = async (e) => {
     const b = e.target.closest('[data-a]');
     if (!b) return;
+    if (b.dataset.a === 'disconnect') { PM.disconnect(); return; }
     if (b.dataset.a === 'reload') { await pm.select(pm.current ?? 0); draw(); }
     if (b.dataset.a === 'export') download(`pocketmaster-${slotLabel(pm.current ?? 0)}-${slug(pm.names[pm.current] || 'preset')}.json`, { ...shown, name: pm.names[pm.current] || '' });
     if (b.dataset.a === 'save') {

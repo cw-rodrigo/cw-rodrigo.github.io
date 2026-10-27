@@ -41,7 +41,7 @@ export default {
     st.map ||= await PM.map();
     el.innerHTML = `
       <h1 class="h2 mb-1">Timbre a partir de uma música</h1>
-      <p class="text-body-secondary">Ouve um trecho, sugere um timbre e monta o preset na sua Pocket Master pelo USB.</p>
+      <p class="text-body-secondary">Ouve um trecho, sugere um timbre e monta o preset na sua Pocket Master pelo USB ou Bluetooth.</p>
       <section class="card mb-4" aria-labelledby="h-song"><div class="card-body">
         <h2 class="h5" id="h-song"><span class="badge rounded-pill text-bg-primary me-1">1</span> A música</h2>
         <div class="d-flex flex-wrap gap-4 mb-3">
@@ -68,7 +68,7 @@ export default {
         <summary class="text-primary">Como funciona e cuidados</summary>
         <p class="mt-2">A análise mede a curva de frequências do trecho, quanto de distorção há, a compressão e o reverb, e escolhe amplificador, caixa, equalizador e efeitos parecidos. É um ponto de partida: ajuste pelos controles e, para chegar mais perto, use o <strong>ajuste fino ouvindo a pedaleira</strong>, que compara o som que sai dela com a música enquanto você toca.</p>
         <p>Delay e modulação não são detectados sozinhos (o ritmo da palhetada se confunde com eco); escolha nos controles. O tempo do delay usa o andamento detectado.</p>
-        <p>Conexão: cabo USB-C para USB-C, no Chrome ou Edge (computador ou Android). Mandar para a pedaleira muda só o preset em edição; nada é gravado até você salvar, e antes de salvar por cima de um preset uma cópia dele é guardada. Projeto não oficial; o protocolo vem do <a href="https://github.com/suckyble/PocketEdit" target="_blank" rel="noopener">PocketEdit</a> e do <a href="https://github.com/voronkovd/pocket-master-mcp" target="_blank" rel="noopener">pocket-master-mcp</a>.</p>
+        <p>Conexão: cabo USB-C para USB-C ou Bluetooth (escolha "Sonic Master BLE"), no Chrome ou Edge (computador ou Android). O ajuste fino precisa do cabo, que leva o som da pedaleira ao computador. Mandar para a pedaleira muda só o preset em edição; nada é gravado até você salvar, e antes de salvar por cima de um preset uma cópia dele é guardada. Projeto não oficial; o protocolo vem do <a href="https://github.com/suckyble/PocketEdit" target="_blank" rel="noopener">PocketEdit</a> e do <a href="https://github.com/voronkovd/pocket-master-mcp" target="_blank" rel="noopener">pocket-master-mcp</a>.</p>
       </details>`;
     const src = audioSource($('#t-source'), {
       range: 'required', defaultRange: [30, 60], modes: ['youtube', 'file'],
@@ -264,19 +264,20 @@ function changed(rerenderEditor = false) {
 function renderPedal() {
   const box = $('#pedal');
   if (!box) return;
-  if (!PM.midiSupported()) {
-    box.innerHTML = '<div class="alert alert-secondary mb-0">Este navegador não conversa com aparelhos USB (MIDI). Use o Chrome ou o Edge, no computador ou no Android. Enquanto isso, dá para montar o preset à mão com o resumo acima.</div>';
+  if (!PM.canConnect()) {
+    box.innerHTML = PM.connectButtonsHtml().replace('</div>', ' Enquanto isso, dá para montar o preset à mão com o resumo acima.</div>');
     return;
   }
   const pm = PM.device();
   if (!pm) {
-    box.innerHTML = `<p>Ligue a Pocket Master no USB (cabo USB-C para USB-C) e conecte.</p>
-      <button class="btn btn-primary" type="button" id="pm-connect"><i class="bi bi-usb-symbol"></i> Conectar a pedaleira</button>
-      <p class="small text-body-secondary mt-2 mb-0">O navegador vai pedir permissão para usar aparelhos MIDI. Nada é gravado sem você pedir.</p>`;
-    $('#pm-connect').onclick = async (e) => {
-      busyButton(e.currentTarget, true, 'Conectando…');
-      try { await PM.connect(); toast('Pedaleira conectada.', 'success'); if (db.prefs.live) sendNow(); } catch (err) { toast(PM.connectError(err), 'danger'); renderPedal(); }
+    box.innerHTML = `<p>Conecte a Pocket Master:</p>${PM.connectButtonsHtml()}`;
+    box.onclick = async (e) => {
+      const b = e.target.closest('[data-connect]');
+      if (!b) return;
+      busyButton(b, true, 'Conectando…');
+      try { await PM.connect(b.dataset.connect); toast('Pedaleira conectada.', 'success'); if (db.prefs.live) sendNow(); } catch (err) { toast(PM.connectError(err), 'danger'); renderPedal(); }
     };
+    box.onchange = null;
     return;
   }
   const slot = db.prefs.slot ?? defaultSlot(pm);
@@ -285,7 +286,7 @@ function renderPedal() {
     <div class="row g-3">
       <div class="col-lg-6"><div class="border rounded p-3 h-100">
         <h3 class="h6">Experimentar</h3>
-        <p class="small mb-2">Conectada: <strong>${esc(pm.name)}</strong> · em edição: <strong>${esc(PM.currentLabel())}</strong></p>
+        <p class="small mb-2">Conectada pelo ${pm.via === 'ble' ? '<i class="bi bi-bluetooth"></i> Bluetooth' : '<i class="bi bi-usb-symbol"></i> USB'}: <strong>${esc(pm.name)}</strong> · em edição: <strong>${esc(PM.currentLabel())}</strong> <button class="btn btn-link btn-sm p-0 align-baseline" type="button" data-p="disconnect">desconectar</button></p>
         <div class="d-flex flex-wrap gap-2 mb-2">
           <button class="btn btn-primary btn-sm" type="button" data-p="send"><i class="bi bi-send"></i> Mandar o timbre</button>
           <button class="btn btn-outline-secondary btn-sm" type="button" data-p="undo" title="Descarta o que foi mandado e recarrega o preset salvo">Desfazer</button>
@@ -304,7 +305,7 @@ function renderPedal() {
       </div></div>
       <div class="col-12"><div class="border rounded p-3">
         <h3 class="h6">Ajuste fino ouvindo a pedaleira</h3>
-        <p class="small">Toque algo parecido com o trecho (mesmos acordes ou riff). A página ouve a saída USB da pedaleira, compara com a música e corrige o equalizador e o ganho a cada 4 segundos.</p>
+        <p class="small">Toque algo parecido com o trecho (mesmos acordes ou riff). A página ouve a saída de áudio USB da pedaleira, compara com a música e corrige o equalizador e o ganho a cada 4 segundos.${pm.via === 'ble' ? ' <strong>Pelo Bluetooth o som da pedaleira não chega ao computador:</strong> para o ajuste fino, ligue também o cabo USB (o controle pode continuar pelo Bluetooth).' : ''}</p>
         <div class="row g-2 align-items-end">
           <div class="col-sm"><label class="form-label small mb-0" for="pm-input">Entrada de áudio</label><select class="form-select form-select-sm" id="pm-input"><option value="">Escolha a entrada da pedaleira…</option></select></div>
           <div class="col-sm-auto"><button class="btn btn-sm ${st.refine ? 'btn-danger' : 'btn-outline-primary'}" type="button" data-p="refine">${st.refine ? '<i class="bi bi-stop-fill"></i> Parar o ajuste' : '<i class="bi bi-soundwave"></i> Começar o ajuste'}</button></div>
@@ -326,6 +327,7 @@ function renderPedal() {
     if (b.dataset.p === 'undo') { try { await pm.select(pm.current ?? 0); st.lastSent = null; toast('Voltou ao preset salvo.'); } catch (err) { toast(err.message, 'danger'); } }
     if (b.dataset.p === 'save') savePreset(b);
     if (b.dataset.p === 'refine') toggleRefine();
+    if (b.dataset.p === 'disconnect') { stopRefine(); PM.disconnect(); }
   };
 }
 

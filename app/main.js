@@ -83,7 +83,8 @@ function pill() {
   const el = $('#pm-pill');
   const label = PM.currentLabel();
   el.hidden = !label;
-  el.innerHTML = label ? `<i class="bi bi-usb-symbol"></i> <span class="d-none d-sm-inline">${label}</span>` : '';
+  el.innerHTML = label ? `<i class="bi ${PM.via() === 'ble' ? 'bi-bluetooth' : 'bi-usb-symbol'}"></i> <span class="d-none d-sm-inline">${label}</span>` : '';
+  el.title = label ? `Pocket Master conectada pelo ${PM.via() === 'ble' ? 'Bluetooth' : 'USB'}` : '';
 }
 PM.onDevice(pill);
 const syncIcon = { off: 'bi-person-circle', idle: 'bi-cloud', syncing: 'bi-cloud-arrow-up', ok: 'bi-cloud-check', error: 'bi-cloud-slash' };
