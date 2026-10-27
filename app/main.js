@@ -12,6 +12,8 @@ const SECTIONS = {
   timbres: () => import('./timbres/timbres.js'),
   ferramentas: () => import('./tools/index.js'),
   conta: () => import('./account.js'),
+  sintetizador: () => import('./synth/synth.js'),
+  daw: () => import('./daw/daw.js'),
 };
 const TOOLS = {
   tom: () => import('./tools/tom.js'),

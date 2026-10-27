@@ -16,7 +16,7 @@ export default {
     el.innerHTML = `
       <section class="py-3 py-md-4">
         <h1 class="display-6 fw-bold mb-2">Estúdio</h1>
-        <p class="lead text-body-secondary mb-0">Cifras, timbres e ferramentas de áudio que rodam no seu navegador.</p>
+        <p class="lead text-body-secondary mb-0">Cifras, timbres, DAW, sintetizador e ferramentas de áudio que rodam no seu navegador.</p>
         ${C.configured() && !u ? '<p class="mt-2 mb-0"><a href="#/conta"><i class="bi bi-cloud-arrow-up"></i> Entre ou crie uma conta</a> para guardar tudo na nuvem e usar em qualquer aparelho.</p>' : ''}
         ${u ? `<p class="mt-2 mb-0 small text-body-secondary"><i class="bi bi-cloud-check"></i> Conectado como <strong>${esc(u.username)}</strong>.</p>` : ''}
       </section>
@@ -29,6 +29,12 @@ export default {
           <div class="d-flex align-items-center gap-2"><i class="bi bi-sliders text-primary"></i><h2 class="h4 mb-0 text-body">Timbres</h2></div>
           <p class="text-body-secondary mt-2 mb-1">Ouve um trecho de música, sugere o timbre e monta o preset na Sonicake Pocket Master (USB ou Bluetooth), com ajuste fino ouvindo a pedaleira.</p>
           <span class="small text-body-secondary">${tones} ${tones === 1 ? 'timbre guardado' : 'timbres guardados'}</span></div></a></div>
+        <div class="col"><a class="card h-100 text-decoration-none tile border-primary" href="#/daw"><div class="card-body">
+          <div class="d-flex align-items-center gap-2"><i class="bi bi-boombox text-primary"></i><h2 class="h4 mb-0 text-body">DAW</h2></div>
+          <p class="text-body-secondary mt-2 mb-0">Grave a Pocket Master pela entrada USB dela e componha com o sintetizador: faixas, loop, metrônomo, piano roll, mixer e exportação em WAV.</p></div></a></div>
+        <div class="col"><a class="card h-100 text-decoration-none tile border-primary" href="#/sintetizador"><div class="card-body">
+          <div class="d-flex align-items-center gap-2"><i class="bi bi-keyboard text-primary"></i><h2 class="h4 mb-0 text-body">Sintetizador</h2></div>
+          <p class="text-body-secondary mt-2 mb-0">Tudo em um: subtrativo, aditivo, FM, AM, wavetable, phase distortion, formantes, granular, modelagem física, sampler (General MIDI), bateria e NES no estilo FamiTracker.</p></div></a></div>
       </div>
       <h2 class="h5">Ferramentas</h2>
       <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3">

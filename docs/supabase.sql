@@ -1,11 +1,11 @@
 -- Banco do Estúdio (cw-rodrigo.github.io) no Supabase.
 -- Cole tudo no SQL Editor do projeto e rode uma vez.
--- Cada usuário tem um documento JSON por app (cifras, timbres, pocketmaster),
+-- Cada usuário tem um documento JSON por app (cifras, timbres, pocketmaster, synth),
 -- e as regras (RLS) garantem que ninguém lê nem altera os dados de outra pessoa.
 
 create table if not exists public.user_data (
   user_id    uuid        not null default auth.uid() references auth.users (id) on delete cascade,
-  app        text        not null check (app in ('cifras', 'timbres', 'pocketmaster')),
+  app        text        not null check (app in ('cifras', 'timbres', 'pocketmaster', 'synth')),
   data       jsonb       not null default '{}'::jsonb,
   updated_at timestamptz not null default now(),
   primary key (user_id, app),
