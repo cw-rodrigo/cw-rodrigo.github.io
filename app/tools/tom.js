@@ -8,9 +8,11 @@ import { $, esc, mmss, progressHtml, setProgress } from '/lib/core/ui.js';
 let last = null; // último resultado de áudio
 let kd = null;
 
+const tuningText = (c) => (Math.abs(c) < 8 ? 'Afinação padrão (Lá 440).' : `Gravação ${Math.abs(c)} cents ${c > 0 ? 'acima' : 'abaixo'} do Lá 440 (Lá ≈ ${Math.round(440 * 2 ** (c / 1200))} Hz): afine ${c > 0 ? 'um pouco para cima' : 'um pouco para baixo'} para tocar junto.`);
 const keyHtml = (res, label) => `<p class="small text-body-secondary mb-1">${esc(label)}</p>
   <div class="display-5 fw-bold text-primary">${esc(res[0].key)}</div>
-  <p class="text-body-secondary mb-0">Também pode ser ${esc(res.slice(1, 3).map((r) => r.key).join(' ou '))}. Relativo: ${esc(relativeOf(res[0].key))}.</p>`;
+  <p class="text-body-secondary mb-0">Também pode ser ${esc(res.slice(1, 3).map((r) => r.key).join(' ou '))}. Relativo: ${esc(relativeOf(res[0].key))}.</p>
+  ${res.tuning != null ? `<p class="small text-body-secondary mb-0">${tuningText(res.tuning)}</p>` : ''}`;
 
 export default {
   title: 'Descobrir o tom',
