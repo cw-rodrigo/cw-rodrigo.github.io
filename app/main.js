@@ -6,6 +6,7 @@ import { onSyncStatus, syncStatus } from '/lib/core/sync.js';
 import { $, $$ } from '/lib/core/ui.js';
 import { installAgentApi } from '/lib/agent/webmcp.js';
 import { startBridge } from '/lib/agent/bridge.js';
+import { onMonitor, monitorState } from '/lib/pocketmaster/monitor.js';
 
 const view = $('#view');
 const SECTIONS = {
@@ -86,12 +87,13 @@ window.addEventListener('beforeunload', (e) => {
 // ---------------------------------------------------------------- menu
 function pill() {
   const el = $('#pm-pill');
-  const label = PM.currentLabel();
-  el.hidden = !label;
-  el.innerHTML = label ? `<i class="bi ${PM.via() === 'ble' ? 'bi-bluetooth' : 'bi-usb-symbol'}"></i> <span class="d-none d-sm-inline">${label}</span>` : '';
-  el.title = label ? `Pocket Master conectada pelo ${PM.via() === 'ble' ? 'Bluetooth' : 'USB'}` : '';
+  const label = PM.currentLabel(), mon = monitorState().on;
+  el.hidden = !label && !mon;
+  el.innerHTML = (label ? `<i class="bi ${PM.via() === 'ble' ? 'bi-bluetooth' : 'bi-usb-symbol'}"></i> <span class="d-none d-sm-inline">${label}</span>` : '') + (mon ? `${label ? ' ' : ''}<i class="bi bi-headphones"></i>` : '');
+  el.title = [label && `Pocket Master conectada pelo ${PM.via() === 'ble' ? 'Bluetooth' : 'USB'}`, mon && 'ouvindo a pedaleira no computador'].filter(Boolean).join(' · ');
 }
 PM.onDevice(pill);
+onMonitor(pill);
 const syncIcon = { off: 'bi-person-circle', idle: 'bi-cloud', syncing: 'bi-cloud-arrow-up', ok: 'bi-cloud-check', error: 'bi-cloud-slash' };
 function renderAccount(s) {
   const u = C.user();

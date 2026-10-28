@@ -4,7 +4,7 @@
 
 ## Para agentes de IA
 
-O site expõe 38 ferramentas no formato MCP (nome, descrição e JSON Schema), que agem nos dados do navegador da pessoa:
+O site expõe 44 ferramentas no formato MCP (nome, descrição e JSON Schema), que agem nos dados do navegador da pessoa:
 
 - [Lista das ferramentas (JSON)](https://cw-rodrigo.github.io/mcp/tools.json)
 - [Página Agentes de IA](https://cw-rodrigo.github.io/#/agentes): como conectar
@@ -15,7 +15,7 @@ Formas de acesso:
 - JavaScript na página: `await estudio.tools.call('cifras_listar', {})`, `estudio.tools.list()`.
 - MCP pelo servidor local (Claude Code: `claude mcp add estudio -- node /caminho/estudio-mcp.mjs`).
 
-Grupos: site_* (estado, navegação), cifras_* e letras_buscar (cifras em ChordPro), listas_* (repertórios), timbres_* e pedaleira_* (Pocket Master), daw_* (projetos, canais, padrões, playlist), sintetizador_presets.
+Grupos: site_* (estado, navegação), cifras_* e letras_buscar (cifras em ChordPro), listas_* (repertórios), timbres_* e pedaleira_* (Pocket Master), daw_* (projetos, canais, padrões, playlist, gravar, exportar WAV), audio_escutar (ouve a pedaleira e descreve o timbre), timbres_ajuste_fino, pedaleira_ouvir (retorno), sintetizador_presets.
 Ações destrutivas (apagar, gravar na pedaleira) pedem confirmação da pessoa na página.
 
 ## Seções

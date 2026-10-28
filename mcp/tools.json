@@ -1398,5 +1398,250 @@
    "readOnlyHint": true,
    "destructiveHint": false
   }
+ },
+ {
+  "name": "pedaleira_ouvir",
+  "title": "Ouvir a pedaleira no computador",
+  "description": "Liga ou desliga o retorno: o som que sai da Pocket Master pelo USB passa a tocar nos alto-falantes/fones do computador. Não precisa do controle (MIDI) conectado, só do cabo USB.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "ligar": {
+     "type": "boolean",
+     "description": "true liga, false desliga."
+    },
+    "volume": {
+     "type": "integer",
+     "description": "Volume do retorno (0 a 100).",
+     "minimum": 0,
+     "maximum": 100
+    }
+   },
+   "required": [
+    "ligar"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "audio_escutar",
+  "title": "Escutar o instrumento",
+  "description": "Grava alguns segundos da saída da pedaleira (ou do microfone) e devolve o que ouviu: volume, distorção, graves/médios/agudos/presença, reverb, compressão e a curva de frequências. Com \"comparar\" (id de um timbre) diz a diferença para ele e o que mexer. Antes de chamar, peça para a pessoa tocar: a gravação espera o som começar. Use em ciclo com timbres_editar + pedaleira_aplicar_timbre para timbrar como a pessoa pedir.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "fonte": {
+     "type": "string",
+     "description": "\"pedaleira\" (padrão) ou \"microfone\".",
+     "enum": [
+      "pedaleira",
+      "microfone"
+     ]
+    },
+    "segundos": {
+     "type": "number",
+     "description": "Quanto gravar depois que o som começa (2 a 30; padrão 6).",
+     "minimum": 2,
+     "maximum": 30
+    },
+    "esperar": {
+     "type": "number",
+     "description": "Quanto esperar a pessoa começar a tocar (padrão 20 s).",
+     "minimum": 1,
+     "maximum": 90
+    },
+    "instrumento": {
+     "type": "string",
+     "description": "Instrumento ligado na pedaleira: \"guitar\" ou \"bass\" (padrão guitar).",
+     "enum": [
+      "guitar",
+      "bass"
+     ]
+    },
+    "comparar": {
+     "type": "string",
+     "description": "Id de um timbre para comparar (opcional)."
+    }
+   },
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "timbres_ajuste_fino",
+  "title": "Ajuste fino ouvindo a pedaleira",
+  "description": "Manda o timbre para a pedaleira e, enquanto a pessoa toca, ouve a saída USB e corrige sozinho o equalizador e o ganho para chegar perto do alvo do timbre (o mesmo \"ajuste fino\" da seção Timbres). No fim guarda os ajustes no timbre. Precisa da pedaleira conectada (controle) e do cabo USB. Peça para a pessoa tocar durante todo o tempo.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "Id do timbre."
+    },
+    "segundos": {
+     "type": "integer",
+     "description": "Duração do ajuste (10 a 120; padrão 40).",
+     "minimum": 10,
+     "maximum": 120
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "daw_gravar",
+  "title": "Gravar na DAW",
+  "description": "Grava na DAW aberta, como o botão de gravar: áudio da pedaleira (USB) ou do microfone vira um clipe na playlist; \"notas\" grava só o teclado. \"iniciar\" começa (com \"segundos\", para sozinho e devolve o resultado); \"parar\" termina e devolve os clipes novos, com a análise do áudio gravado. A pessoa precisa estar com a DAW aberta e tocar durante a gravação.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "acao": {
+     "type": "string",
+     "description": "iniciar ou parar.",
+     "enum": [
+      "iniciar",
+      "parar"
+     ]
+    },
+    "fonte": {
+     "type": "string",
+     "description": "pedaleira (padrão), microfone ou notas.",
+     "enum": [
+      "pedaleira",
+      "microfone",
+      "notas"
+     ]
+    },
+    "compasso": {
+     "type": "integer",
+     "description": "Compasso onde começa (padrão: onde o cursor está).",
+     "minimum": 1
+    },
+    "contagem": {
+     "type": "boolean",
+     "description": "Conta um compasso antes de gravar."
+    },
+    "segundos": {
+     "type": "number",
+     "description": "Grava por este tempo e para sozinho (1 a 150).",
+     "minimum": 1,
+     "maximum": 150
+    },
+    "analisar": {
+     "type": "boolean",
+     "description": "Analisa o áudio gravado (padrão true)."
+    },
+    "instrumento": {
+     "type": "string",
+     "description": "Instrumento ligado na pedaleira: \"guitar\" ou \"bass\" (padrão guitar).",
+     "enum": [
+      "guitar",
+      "bass"
+     ]
+    }
+   },
+   "required": [
+    "acao"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "daw_analisar_clipe",
+  "title": "Escutar um clipe de áudio",
+  "description": "Analisa um clipe de áudio da playlist (por exemplo uma gravação da pedaleira): volume, distorção, equalização, reverb. Pode comparar com um timbre.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "projeto": {
+     "type": "string",
+     "description": "Id do projeto (opcional)."
+    },
+    "clipe": {
+     "type": "string",
+     "description": "Id do clipe de áudio."
+    },
+    "instrumento": {
+     "type": "string",
+     "description": "Instrumento ligado na pedaleira: \"guitar\" ou \"bass\" (padrão guitar).",
+     "enum": [
+      "guitar",
+      "bass"
+     ]
+    },
+    "comparar": {
+     "type": "string",
+     "description": "Id de um timbre (opcional)."
+    }
+   },
+   "required": [
+    "clipe"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "daw_exportar",
+  "title": "Exportar o áudio da DAW",
+  "description": "Mixa o projeto (a música inteira, o padrão atual ou só o loop) num arquivo WAV, baixa o arquivo no computador da pessoa e devolve uma análise da mixagem (duração, pico, volume médio, se saturou, curva de frequências). Com \"colocarNaPlaylist\", a mixagem também vira um clipe de áudio novo no projeto.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "projeto": {
+     "type": "string",
+     "description": "Id do projeto (opcional)."
+    },
+    "parte": {
+     "type": "string",
+     "description": "musica (padrão), padrao ou loop.",
+     "enum": [
+      "musica",
+      "padrao",
+      "loop"
+     ]
+    },
+    "baixar": {
+     "type": "boolean",
+     "description": "Baixa o WAV (padrão true)."
+    },
+    "nomeArquivo": {
+     "type": "string",
+     "description": "Nome do arquivo (sem .wav)."
+    },
+    "colocarNaPlaylist": {
+     "type": "boolean",
+     "description": "Também põe a mixagem como clipe de áudio numa faixa nova."
+    }
+   },
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
  }
 ]

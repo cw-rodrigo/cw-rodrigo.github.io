@@ -871,6 +871,32 @@ function session(el, ctx, p0) {
       if ((a === 'tocar') !== engine.playing) await togglePlay();
     },
     playing: () => engine.playing,
+    recording: () => !!engine.recording,
+    /** Começa a gravar (como o botão): source 'pocket' | 'default' | 'notes'; fromBar 1 = início. */
+    async record({ fromBar = null, source = null, countIn = null } = {}) {
+      if (engine.recording) throw new Error('A DAW já está gravando.');
+      if (source) p.rec.source = source;
+      if (countIn != null) p.countIn = countIn;
+      if (fromBar != null) {
+        if (p.mode === 'pattern' && p.rec.source !== 'notes') p.mode = 'song';
+        engine.seek((fromBar - 1) * p.sig);
+      }
+      await toggleRecord();
+      if (!engine.recording) throw new Error('Não consegui começar a gravar (a entrada de áudio foi permitida?).');
+      return { fromBeat: engine.position, source: p.rec.source };
+    },
+    /** Para a gravação e devolve os clipes novos da playlist. */
+    async stopRecord() {
+      if (!engine.recording) throw new Error('A DAW não está gravando.');
+      const before = new Set(p.playlist.clips.map((c) => c.id));
+      await toggleRecord();
+      return p.playlist.clips.filter((c) => !before.has(c.id));
+    },
+    /** Mixagem: kind 'song' | 'pattern' | 'loop'. */
+    render(kind = 'song') {
+      if (engine.playing) engine.stop();
+      return engine.render(kind === 'pattern' ? { mode: 'pattern' } : kind === 'loop' ? { mode: 'song', from: p.loop.start, to: p.loop.end } : { mode: 'song' });
+    },
   });
 
   const ready = (async () => {

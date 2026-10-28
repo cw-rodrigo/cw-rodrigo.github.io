@@ -3,6 +3,8 @@ import * as PM from '/lib/pocketmaster/session.js';
 import { blockEditor, applyEdit } from '/lib/pocketmaster/editor.js';
 import { slotLabel, cleanName, USER_PRESETS, TOTAL_PRESETS, NAME_LEN } from '/lib/pocketmaster/pm.js';
 import { $, esc, toast, download, slug, confirmBox, busyButton } from '/lib/core/ui.js';
+import * as MON from '/lib/pocketmaster/monitor.js';
+import { captureError } from '/lib/audio/io.js';
 
 let active = false;
 let editor = null;
@@ -23,11 +25,21 @@ export default {
     el.innerHTML = `<div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
         <div><h1 class="h2 mb-1">Pocket Master</h1><p class="text-body-secondary mb-0">Editor da Sonicake Pocket Master pelo USB (Web MIDI) ou Bluetooth (Web Bluetooth). Projeto não oficial.</p></div>
       </div>
+      <section class="card mb-3" aria-labelledby="h-mon"><div class="card-body">
+        <div class="d-flex flex-wrap align-items-center gap-3">
+          <div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" role="switch" id="pm-mon"><label class="form-check-label fw-bold" for="pm-mon" id="h-mon"><i class="bi bi-headphones"></i> Ouvir a pedaleira no computador</label></div>
+          <label class="d-flex align-items-center gap-2 small mb-0" for="pm-mon-vol">Volume <input class="form-range" type="range" id="pm-mon-vol" min="0" max="100" style="width:8rem"></label>
+          <div class="daw-meter flex-grow-1" style="height:8px;max-width:14rem" title="Nível do som que chega da pedaleira"><div id="pm-mon-lvl"></div></div>
+          <span class="small text-body-secondary" id="pm-mon-info"></span>
+        </div>
+        <p class="small text-body-secondary mt-2 mb-0">Toca nos alto-falantes ou fones do computador o som que sai da Pocket Master pelo cabo USB-C (ela funciona como uma placa de som; não precisa conectar o controle abaixo). Continua tocando enquanto você navega pelo site. O computador acrescenta um pequeno atraso; para tocar junto, os fones ligados na própria pedaleira não têm atraso.</p>
+      </div></section>
       <div id="pm-main"></div>
       <section class="mt-4"><h2 class="h5">Cópias de segurança</h2><p class="small text-body-secondary">Antes de salvar por cima de um preset (aqui ou no Timbres), uma cópia do que estava lá fica guardada${''} — e vai para a sua conta, se você tiver entrado.</p><div id="pm-backups"></div></section>`;
     draw();
     drawBackups();
-    return () => { active = false; };
+    const offMon = listenCard();
+    return () => { active = false; offMon(); };
   },
 };
 
@@ -154,4 +166,30 @@ function drawBackups() {
       draw(); drawBackups();
     }
   };
+}
+
+// ---------------------------------------------------------------- retorno (ouvir a pedaleira)
+function listenCard() {
+  const sw = $('#pm-mon'), vol = $('#pm-mon-vol'), lvl = $('#pm-mon-lvl'), info = $('#pm-mon-info');
+  let raf = 0;
+  const frame = () => {
+    const v = MON.monitorLevel();
+    lvl.style.width = Math.min(100, v * 100) + '%';
+    lvl.classList.toggle('clip', v > 0.98);
+    raf = requestAnimationFrame(frame);
+  };
+  const off = MON.onMonitor((s) => {
+    sw.checked = s.on; vol.value = Math.round(s.volume * 100);
+    info.textContent = s.on ? s.label : '';
+    cancelAnimationFrame(raf);
+    if (s.on) raf = requestAnimationFrame(frame); else lvl.style.width = '0';
+  });
+  sw.onchange = async () => {
+    if (!sw.checked) { MON.stopMonitor(); return; }
+    sw.disabled = true;
+    try { await MON.startMonitor(); } catch (err) { sw.checked = false; toast(err.name === 'NoPedal' ? err.message : captureError(err, 'a entrada de áudio da pedaleira'), 'danger'); }
+    sw.disabled = false;
+  };
+  vol.oninput = () => MON.setMonitorVolume(Number(vol.value) / 100);
+  return () => { off(); cancelAnimationFrame(raf); };
 }

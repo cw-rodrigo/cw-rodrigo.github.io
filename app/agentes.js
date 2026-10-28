@@ -4,7 +4,7 @@ import { webmcpStatus, activityLog } from '/lib/agent/webmcp.js';
 import { onBridge, setBridge, DEFAULT_PORT } from '/lib/agent/bridge.js';
 import { $, esc, toast } from '/lib/core/ui.js';
 
-const GROUPS = [['site_', 'Site'], ['cifras_', 'Cifras'], ['letras_', 'Cifras'], ['listas_', 'Repertórios'], ['timbres_', 'Timbres'], ['pedaleira_', 'Pedaleira'], ['daw_', 'DAW'], ['sintetizador_', 'Sintetizador']];
+const GROUPS = [['site_', 'Site'], ['audio_', 'Ouvir e gravar'], ['cifras_', 'Cifras'], ['letras_', 'Cifras'], ['listas_', 'Repertórios'], ['timbres_', 'Timbres'], ['pedaleira_', 'Pedaleira'], ['daw_', 'DAW'], ['sintetizador_', 'Sintetizador']];
 const groupOf = (n) => GROUPS.find(([p]) => n.startsWith(p))?.[1] || 'Outros';
 const STATE = { off: ['Desligada', 'secondary'], connecting: ['Conectando…', 'info'], waiting: ['Esperando o servidor…', 'warning'], connected: ['Conectada', 'success'], error: ['Erro', 'danger'] };
 const SERVER_URL = '/mcp/estudio-mcp.mjs';
