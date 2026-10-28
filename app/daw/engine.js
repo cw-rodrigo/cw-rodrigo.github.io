@@ -347,36 +347,38 @@ export class DawEngine {
     syn.noteOff(note);
     this.recording?.notes.push({ ch: chId, type: 'off', note, beat: this.position });
   }
-  /** Liga/desliga ouvir a entrada do insert pelo site. */
-  async setMonitor(ins, on) {
-    const cur = this.monitors.get(ins.id);
-    if (cur) { cur.node.disconnect(); cur.src.disconnect(); cur.stream.getTracks().forEach((t) => t.stop()); this.monitors.delete(ins.id); }
-    if (!on) return;
-    const m = this.mixer.get(ins.id);
+  /** Ouvir uma entrada pelo site, passando pelo insert. input = { deviceId, channel } ou null para desligar. */
+  async setMonitor(insId, input) {
+    const cur = this.monitors.get(insId);
+    if (cur) { cur.node.disconnect(); cur.src.disconnect(); cur.stream.getTracks().forEach((t) => t.stop()); this.monitors.delete(insId); }
+    const m = input && this.mixer.get(insId);
     if (!m) return;
-    const stream = await getInput(ins.input.deviceId || null);
+    const stream = await getInput(input.deviceId || null);
     const src = this.ctx.createMediaStreamSource(stream);
     let node = src;
-    if (ins.input.channel !== 'stereo') {
-      const split = this.ctx.createChannelSplitter(2), merge = this.ctx.createChannelMerger(2), k = ins.input.channel === 'right' ? 1 : 0;
+    if (input.channel && input.channel !== 'stereo') {
+      const split = this.ctx.createChannelSplitter(2), merge = this.ctx.createChannelMerger(2), k = input.channel === 'right' ? 1 : 0;
       src.connect(split); split.connect(merge, k, 0); split.connect(merge, k, 1); node = merge;
     }
     node.connect(m.input);
-    this.monitors.set(ins.id, { stream, src, node });
+    this.monitors.set(insId, { stream, src, node });
   }
-  stopMonitors() { for (const [id] of this.monitors) this.setMonitor({ id }, false); }
+  stopMonitors() { for (const [id] of this.monitors) this.setMonitor(id, null); }
 
-  /** Grava as entradas dos inserts armados e as notas tocadas, a partir de `fromBeat`. */
-  async record(fromBeat, { countIn = 0 } = {}) {
+  /**
+   * Grava a partir de `fromBeat`: as entradas pedidas (sources: [{ ins, input: { deviceId, channel } }])
+   * e as notas que forem tocadas no teclado.
+   */
+  async record(fromBeat, { countIn = 0, sources = [] } = {}) {
     const p = this.p;
     this.ctx.__recReady ||= this.ctx.audioWorklet.addModule(new URL('/lib/audio/recorder-worklet.js', location.href).href);
     await this.ctx.__recReady;
     const rec = { fromBeat, mode: p.mode, audio: [], notes: [], devices: new Map() };
-    for (const ins of p.mixer.inserts.filter((i) => i.arm)) {
-      const key = ins.input.deviceId || 'default';
+    for (const { ins, input } of sources) {
+      const key = input.deviceId || 'default';
       let dev = rec.devices.get(key);
       if (!dev) {
-        const stream = await getInput(ins.input.deviceId || null);
+        const stream = await getInput(input.deviceId || null);
         const src = this.ctx.createMediaStreamSource(stream);
         const node = new AudioWorkletNode(this.ctx, 'estudio-recorder', { numberOfInputs: 1, numberOfOutputs: 0, channelCount: 2, channelCountMode: 'explicit' });
         src.connect(node);
@@ -384,7 +386,7 @@ export class DawEngine {
         node.port.onmessage = (e) => { if (e.data.type === 'data') dev.chunks.push(e.data); };
         rec.devices.set(key, dev);
       }
-      rec.audio.push({ ins, dev });
+      rec.audio.push({ ins, input, dev });
     }
     this.recording = rec;
     for (const dev of rec.devices.values()) dev.node.port.postMessage('start');
@@ -424,9 +426,9 @@ export class DawEngine {
       dev.L = L.subarray(skip); dev.R = R.subarray(skip);
       dev.firstBeat = Math.max(firstBeat, rec.fromBeat);
     }
-    for (const { ins, dev } of rec.audio) {
+    for (const { ins, input, dev } of rec.audio) {
       if (!dev.L || dev.L.length < 1000) continue;
-      const ch = ins.input.channel;
+      const ch = input.channel;
       const chans = ch === 'left' ? [dev.L.slice()] : ch === 'right' ? [dev.R.slice()] : [dev.L.slice(), dev.R.slice()];
       const audioId = await saveAudio(chans, this.ctx.sampleRate, ins.name);
       await loadAudio(this.ctx, audioId);

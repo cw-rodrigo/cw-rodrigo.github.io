@@ -1,0 +1,1402 @@
+[
+ {
+  "name": "site_estado",
+  "title": "Onde a pessoa está",
+  "description": "Diz qual seção do Estúdio está aberta, se a conta está conectada (sincroniza entre aparelhos) e se a pedaleira está conectada. Chame primeiro para se situar.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "site_abrir",
+  "title": "Abrir seção",
+  "description": "Abre uma seção do Estúdio para a pessoa ver (ex.: a cifra que você criou). Use \"endereco\" com um link devolvido por outra ferramenta (ex.: \"#/cifras/cifra/abc\") ou \"secao\".",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "secao": {
+     "type": "string",
+     "description": "Seção.",
+     "enum": [
+      "inicio",
+      "cifras",
+      "timbres",
+      "daw",
+      "sintetizador",
+      "ferramentas",
+      "pedaleira",
+      "conta",
+      "agentes"
+     ]
+    },
+    "endereco": {
+     "type": "string",
+     "description": "Endereço interno começando com \"#/\"."
+    }
+   },
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "cifras_listar",
+  "title": "Listar cifras",
+  "description": "Lista as cifras (músicas) salvas no Estúdio, com id, título, artista, tom e BPM. Filtre com \"busca\" (título ou artista).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "busca": {
+     "type": "string",
+     "description": "Texto para filtrar por título ou artista (opcional)."
+    },
+    "limite": {
+     "type": "integer",
+     "description": "Máximo de resultados (padrão 100).",
+     "minimum": 1,
+     "maximum": 1000
+    }
+   },
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "cifras_ler",
+  "title": "Ler cifra",
+  "description": "Lê uma cifra completa no formato ChordPro (acordes entre colchetes antes da sílaba, ex.: \"[G]Letra [D/F#]aqui\"). Pode devolver já transposta com \"tom\" ou \"semitons\".",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "Id da cifra."
+    },
+    "tom": {
+     "type": "string",
+     "description": "Tom desejado (ex.: \"D\", \"Bm\"). Opcional."
+    },
+    "semitons": {
+     "type": "integer",
+     "description": "Transposição em semitons (-11 a 11). Opcional.",
+     "minimum": -11,
+     "maximum": 11
+    },
+    "formato": {
+     "type": "string",
+     "description": "\"chordpro\" (padrão) ou \"texto\" (acordes sobre a letra).",
+     "enum": [
+      "chordpro",
+      "texto"
+     ]
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "cifras_criar",
+  "title": "Criar cifra",
+  "description": "Cria uma cifra nova. \"conteudo\" pode ser ChordPro ([C]letra) ou o formato de acordes sobre a letra (é convertido). Sem \"tom\", o tom é estimado pelos acordes. Opcionalmente já coloca a música numa lista.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "titulo": {
+     "type": "string",
+     "description": "Título da música."
+    },
+    "artista": {
+     "type": "string",
+     "description": "Artista."
+    },
+    "conteudo": {
+     "type": "string",
+     "description": "Cifra em ChordPro ou acordes sobre a letra."
+    },
+    "tom": {
+     "type": "string",
+     "description": "Tom original (ex.: \"G\", \"Em\")."
+    },
+    "bpm": {
+     "type": "integer",
+     "description": "Andamento.",
+     "minimum": 20,
+     "maximum": 300
+    },
+    "youtube": {
+     "type": "string",
+     "description": "Id ou link do vídeo do YouTube (opcional)."
+    },
+    "lista": {
+     "type": "string",
+     "description": "Id de uma lista para adicionar a música (opcional)."
+    }
+   },
+   "required": [
+    "titulo"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "cifras_editar",
+  "title": "Editar cifra",
+  "description": "Altera campos de uma cifra existente. Só os campos informados mudam. \"conteudo\" substitui a cifra inteira (ChordPro ou acordes sobre a letra).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "Id da cifra."
+    },
+    "titulo": {
+     "type": "string",
+     "description": "Novo título."
+    },
+    "artista": {
+     "type": "string",
+     "description": "Novo artista."
+    },
+    "conteudo": {
+     "type": "string",
+     "description": "Cifra inteira nova."
+    },
+    "tom": {
+     "type": "string",
+     "description": "Tom original."
+    },
+    "bpm": {
+     "type": "integer",
+     "description": "Andamento.",
+     "minimum": 20,
+     "maximum": 300
+    },
+    "melodia": {
+     "type": "string",
+     "description": "Melodia no formato de notas do Estúdio (opcional)."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "cifras_transpor",
+  "title": "Mudar o tom da cifra",
+  "description": "Reescreve a cifra salva em outro tom (muda os acordes e o tom original). Para só ver transposta sem salvar, use cifras_ler com \"tom\".",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "Id da cifra."
+    },
+    "tom": {
+     "type": "string",
+     "description": "Tom de destino (ex.: \"A\")."
+    },
+    "semitons": {
+     "type": "integer",
+     "description": "Ou a transposição em semitons.",
+     "minimum": -11,
+     "maximum": 11
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "cifras_apagar",
+  "title": "Apagar cifra",
+  "description": "Apaga uma cifra (e a tira de todas as listas). Não dá para desfazer.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "Id da cifra."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true
+  }
+ },
+ {
+  "name": "cifras_detectar_tom",
+  "title": "Descobrir o tom pelos acordes",
+  "description": "Estima o tom de uma cifra (pelo id ou por um texto com acordes).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "Id de uma cifra salva."
+    },
+    "conteudo": {
+     "type": "string",
+     "description": "Ou o texto da cifra."
+    }
+   },
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "letras_buscar",
+  "title": "Buscar letra",
+  "description": "Procura a letra de uma música no LRCLIB (base aberta de letras). Útil para montar uma cifra nova.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "titulo": {
+     "type": "string",
+     "description": "Título."
+    },
+    "artista": {
+     "type": "string",
+     "description": "Artista."
+    }
+   },
+   "required": [
+    "titulo"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "listas_listar",
+  "title": "Listar repertórios",
+  "description": "Lista os repertórios (listas de músicas), com o número de músicas de cada um.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "listas_ler",
+  "title": "Ler repertório",
+  "description": "Mostra as músicas de uma lista, na ordem, com o tom em que cada uma é tocada nela.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "Id da lista."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "listas_criar",
+  "title": "Criar repertório",
+  "description": "Cria uma lista de músicas. \"musicas\" é a lista de ids de cifras, na ordem.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "nome": {
+     "type": "string",
+     "description": "Nome da lista."
+    },
+    "musicas": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Ids das cifras, na ordem (opcional)."
+    }
+   },
+   "required": [
+    "nome"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "listas_editar",
+  "title": "Editar repertório",
+  "description": "Muda uma lista: renomear, adicionar ou remover músicas, reordenar (passando todos os ids na nova ordem) e definir o tom de cada música na lista (por tom ou semitons). Se a lista estiver em edição em lote na tela, as mudanças vão para o rascunho.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "Id da lista."
+    },
+    "nome": {
+     "type": "string",
+     "description": "Novo nome."
+    },
+    "adicionar": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Ids de cifras para pôr no fim."
+    },
+    "remover": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Ids de cifras para tirar."
+    },
+    "ordem": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Todos os ids da lista na nova ordem."
+    },
+    "tons": {
+     "type": "object",
+     "description": "Tom de cada música nesta lista: { \"<id da cifra>\": \"D\" } ou { \"<id>\": -2 } (semitons).",
+     "additionalProperties": {
+      "type": [
+       "string",
+       "integer"
+      ]
+     }
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "listas_apagar",
+  "title": "Apagar repertório",
+  "description": "Apaga uma lista (as cifras continuam salvas).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "Id da lista."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true
+  }
+ },
+ {
+  "name": "timbres_listar",
+  "title": "Listar timbres",
+  "description": "Lista os timbres de guitarra/baixo guardados (presets para a pedaleira Pocket Master).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "timbres_ler",
+  "title": "Ler timbre",
+  "description": "Mostra um timbre: os ajustes de músico (ganho, graves, reverb…) e o preset completo da pedaleira (blocos, modelos e parâmetros).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "Id do timbre."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "timbres_criar",
+  "title": "Criar timbre",
+  "description": "Cria um timbre a partir de ajustes de músico; o Estúdio escolhe amplificador, caixa, EQ e efeitos da Pocket Master. Campos não informados usam um som limpo neutro.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "nome": {
+     "type": "string",
+     "description": "Nome do timbre."
+    },
+    "musica": {
+     "type": "string",
+     "description": "Música de referência (opcional)."
+    },
+    "instrumento": {
+     "type": "string",
+     "description": "\"guitar\" (guitarra) ou \"bass\" (baixo).",
+     "enum": [
+      "guitar",
+      "bass"
+     ]
+    },
+    "ganho": {
+     "type": "integer",
+     "description": "Distorção de 0 (limpo) a 100 (alto ganho). Faixas: <22 limpo, <42 quase saturando, <62 crunch, <80 distorcido.",
+     "minimum": 0,
+     "maximum": 100
+    },
+    "graves": {
+     "type": "number",
+     "description": "Graves em dB em relação ao normal (-12 a 12).",
+     "minimum": -12,
+     "maximum": 12
+    },
+    "medios": {
+     "type": "number",
+     "description": "Médios em dB (-12 a 12).",
+     "minimum": -12,
+     "maximum": 12
+    },
+    "agudos": {
+     "type": "number",
+     "description": "Agudos em dB (-12 a 12).",
+     "minimum": -12,
+     "maximum": 12
+    },
+    "presenca": {
+     "type": "number",
+     "description": "Presença (brilho de 4,5 a 8 kHz) em dB (-12 a 12).",
+     "minimum": -12,
+     "maximum": 12
+    },
+    "reverb": {
+     "type": "integer",
+     "description": "Quantidade de reverb (0 a 100).",
+     "minimum": 0,
+     "maximum": 100
+    },
+    "tipoReverb": {
+     "type": "string",
+     "description": "Tipo de reverb.",
+     "enum": [
+      "auto",
+      "Room",
+      "Spring",
+      "Plate 1",
+      "Hall",
+      "Church",
+      "Air",
+      "Dream"
+     ]
+    },
+    "duracaoReverb": {
+     "type": "number",
+     "description": "Duração do reverb em segundos (0,2 a 6).",
+     "minimum": 0.2,
+     "maximum": 6
+    },
+    "delay": {
+     "type": "string",
+     "description": "Delay: off, slap (curto), tempo (colcheia pontuada), quarter (semínima), long (longo).",
+     "enum": [
+      "off",
+      "slap",
+      "tempo",
+      "quarter",
+      "long"
+     ]
+    },
+    "mixDelay": {
+     "type": "integer",
+     "description": "Volume do delay (0 a 100).",
+     "minimum": 0,
+     "maximum": 100
+    },
+    "bpm": {
+     "type": "integer",
+     "description": "Andamento (para o delay no tempo).",
+     "minimum": 30,
+     "maximum": 300
+    },
+    "modulacao": {
+     "type": "string",
+     "description": "Modulação.",
+     "enum": [
+      "off",
+      "chorus",
+      "phaser",
+      "flanger",
+      "tremolo",
+      "vibe",
+      "vibrato",
+      "octave"
+     ]
+    },
+    "compressor": {
+     "type": "boolean",
+     "description": "Liga o compressor."
+    }
+   },
+   "required": [
+    "nome"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "timbres_editar",
+  "title": "Editar timbre",
+  "description": "Muda ajustes de um timbre (só os informados) e/ou parâmetros de blocos do preset. \"blocos\" ex.: { \"amp\": { \"params\": { \"Gain\": 60 } }, \"dly\": { \"on\": true, \"model\": \"Analog\" } }. Blocos: nr, fx1, drv, amp, ir, eq, fx2, dly, rvb.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "Id do timbre."
+    },
+    "nome": {
+     "type": "string",
+     "description": "Novo nome."
+    },
+    "instrumento": {
+     "type": "string",
+     "description": "\"guitar\" (guitarra) ou \"bass\" (baixo).",
+     "enum": [
+      "guitar",
+      "bass"
+     ]
+    },
+    "ganho": {
+     "type": "integer",
+     "description": "Distorção de 0 (limpo) a 100 (alto ganho). Faixas: <22 limpo, <42 quase saturando, <62 crunch, <80 distorcido.",
+     "minimum": 0,
+     "maximum": 100
+    },
+    "graves": {
+     "type": "number",
+     "description": "Graves em dB em relação ao normal (-12 a 12).",
+     "minimum": -12,
+     "maximum": 12
+    },
+    "medios": {
+     "type": "number",
+     "description": "Médios em dB (-12 a 12).",
+     "minimum": -12,
+     "maximum": 12
+    },
+    "agudos": {
+     "type": "number",
+     "description": "Agudos em dB (-12 a 12).",
+     "minimum": -12,
+     "maximum": 12
+    },
+    "presenca": {
+     "type": "number",
+     "description": "Presença (brilho de 4,5 a 8 kHz) em dB (-12 a 12).",
+     "minimum": -12,
+     "maximum": 12
+    },
+    "reverb": {
+     "type": "integer",
+     "description": "Quantidade de reverb (0 a 100).",
+     "minimum": 0,
+     "maximum": 100
+    },
+    "tipoReverb": {
+     "type": "string",
+     "description": "Tipo de reverb.",
+     "enum": [
+      "auto",
+      "Room",
+      "Spring",
+      "Plate 1",
+      "Hall",
+      "Church",
+      "Air",
+      "Dream"
+     ]
+    },
+    "duracaoReverb": {
+     "type": "number",
+     "description": "Duração do reverb em segundos (0,2 a 6).",
+     "minimum": 0.2,
+     "maximum": 6
+    },
+    "delay": {
+     "type": "string",
+     "description": "Delay: off, slap (curto), tempo (colcheia pontuada), quarter (semínima), long (longo).",
+     "enum": [
+      "off",
+      "slap",
+      "tempo",
+      "quarter",
+      "long"
+     ]
+    },
+    "mixDelay": {
+     "type": "integer",
+     "description": "Volume do delay (0 a 100).",
+     "minimum": 0,
+     "maximum": 100
+    },
+    "bpm": {
+     "type": "integer",
+     "description": "Andamento (para o delay no tempo).",
+     "minimum": 30,
+     "maximum": 300
+    },
+    "modulacao": {
+     "type": "string",
+     "description": "Modulação.",
+     "enum": [
+      "off",
+      "chorus",
+      "phaser",
+      "flanger",
+      "tremolo",
+      "vibe",
+      "vibrato",
+      "octave"
+     ]
+    },
+    "compressor": {
+     "type": "boolean",
+     "description": "Liga o compressor."
+    },
+    "blocos": {
+     "type": "object",
+     "description": "Ajustes manuais por bloco: { bloco: { model?, on?, params? } }."
+    },
+    "volume": {
+     "type": "integer",
+     "description": "Volume do preset (0 a 100).",
+     "minimum": 0,
+     "maximum": 100
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "timbres_apagar",
+  "title": "Apagar timbre",
+  "description": "Apaga um timbre guardado.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "Id do timbre."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true
+  }
+ },
+ {
+  "name": "pedaleira_status",
+  "title": "Estado da pedaleira",
+  "description": "Diz se a Pocket Master está conectada (USB ou Bluetooth), qual preset está ativo e os nomes dos presets do usuário (P01 a P50).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "pedaleira_aplicar_timbre",
+  "title": "Mandar timbre para a pedaleira",
+  "description": "Manda um timbre guardado para o preset em edição da Pocket Master (não grava nada; para gravar use pedaleira_salvar).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "Id do timbre."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "pedaleira_selecionar",
+  "title": "Trocar de preset",
+  "description": "Seleciona um preset da Pocket Master: \"P01\" a \"P50\" (usuário) ou \"F01\" a \"F50\" (fábrica).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "preset": {
+     "type": "string",
+     "description": "Ex.: \"P07\" ou \"F12\"."
+    }
+   },
+   "required": [
+    "preset"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "pedaleira_salvar",
+  "title": "Gravar timbre na pedaleira",
+  "description": "Grava um timbre num preset do usuário (P01 a P50). O que estava no preset é guardado como cópia de segurança (dá para restaurar em Ferramentas → Pedaleira).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "Id do timbre."
+    },
+    "preset": {
+     "type": "string",
+     "description": "Preset de destino, \"P01\" a \"P50\"."
+    },
+    "nome": {
+     "type": "string",
+     "description": "Nome no visor (até 10 letras; padrão: o nome do timbre)."
+    }
+   },
+   "required": [
+    "id",
+    "preset"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true
+  }
+ },
+ {
+  "name": "daw_listar_projetos",
+  "title": "Listar projetos da DAW",
+  "description": "Lista os projetos de música da DAW guardados neste navegador e indica qual está aberto.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "daw_ler_projeto",
+  "title": "Ler projeto da DAW",
+  "description": "Resumo de um projeto: BPM, canais (instrumentos), padrões, clipes da playlist e mixer. Sem \"projeto\", usa o aberto/último.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "projeto": {
+     "type": "string",
+     "description": "Id do projeto (opcional)."
+    }
+   },
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "daw_ler_padrao",
+  "title": "Ler notas de um padrão",
+  "description": "Devolve as notas de um padrão, por canal (início e duração em tempos).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "projeto": {
+     "type": "string",
+     "description": "Id do projeto (opcional)."
+    },
+    "padrao": {
+     "type": "string",
+     "description": "Id ou nome do padrão (padrão: o atual)."
+    }
+   },
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "daw_criar_projeto",
+  "title": "Criar projeto na DAW",
+  "description": "Cria um projeto novo (com bateria, baixo e teclado prontos, como o modelo básico) e o abre se a DAW estiver aberta. \"vazio\" cria sem canais.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "nome": {
+     "type": "string",
+     "description": "Nome."
+    },
+    "bpm": {
+     "type": "integer",
+     "description": "Andamento (padrão 120).",
+     "minimum": 20,
+     "maximum": 300
+    },
+    "temposPorCompasso": {
+     "type": "integer",
+     "description": "Fórmula de compasso (padrão 4).",
+     "minimum": 1,
+     "maximum": 12
+    },
+    "vazio": {
+     "type": "boolean",
+     "description": "Sem canais nem notas de exemplo."
+    }
+   },
+   "required": [
+    "nome"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "daw_configurar",
+  "title": "Configurar projeto",
+  "description": "Muda nome, BPM, compasso ou o modo de reprodução (padrão = toca só o padrão atual em loop; música = toca a playlist).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "projeto": {
+     "type": "string",
+     "description": "Id do projeto (opcional)."
+    },
+    "nome": {
+     "type": "string",
+     "description": "Novo nome."
+    },
+    "bpm": {
+     "type": "number",
+     "description": "Andamento.",
+     "minimum": 20,
+     "maximum": 300
+    },
+    "temposPorCompasso": {
+     "type": "integer",
+     "description": "Tempos por compasso.",
+     "minimum": 1,
+     "maximum": 12
+    },
+    "modo": {
+     "type": "string",
+     "description": "\"padrao\" ou \"musica\".",
+     "enum": [
+      "padrao",
+      "musica"
+     ]
+    },
+    "padraoAtual": {
+     "type": "string",
+     "description": "Id ou nome do padrão a selecionar."
+    }
+   },
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "daw_adicionar_canal",
+  "title": "Adicionar instrumento",
+  "description": "Adiciona um canal (instrumento) ao projeto. Motores: subtractive, additive, fm, am, wavetable, pd, formant, granular, physical, sampler, drums, nes. Use \"preset\" com um nome de sintetizador_presets, ou \"instrumentoGM\" (0 a 127, General MIDI: 0 piano, 24 violão nylon, 25 violão aço, 33 baixo, 40 violino, 48 cordas, 56 trompete, 73 flauta) para amostras reais.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "projeto": {
+     "type": "string",
+     "description": "Id do projeto (opcional)."
+    },
+    "nome": {
+     "type": "string",
+     "description": "Nome do canal."
+    },
+    "motor": {
+     "type": "string",
+     "description": "Motor de síntese.",
+     "enum": [
+      "subtractive",
+      "additive",
+      "fm",
+      "am",
+      "wavetable",
+      "pd",
+      "formant",
+      "granular",
+      "physical",
+      "sampler",
+      "drums",
+      "nes"
+     ]
+    },
+    "preset": {
+     "type": "string",
+     "description": "Nome de um preset de fábrica do motor."
+    },
+    "instrumentoGM": {
+     "type": "integer",
+     "description": "Programa General MIDI (usa o motor sampler).",
+     "minimum": 0,
+     "maximum": 127
+    },
+    "notaDosPassos": {
+     "type": [
+      "integer",
+      "string"
+     ],
+     "description": "Nota tocada pelos passos do sequenciador (padrão 60; bateria: 36 bumbo…)."
+    }
+   },
+   "required": [
+    "nome"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "daw_configurar_canal",
+  "title": "Ajustar canal",
+  "description": "Muda volume (dB), pan (-1 a 1), mudo, nome ou preset de um canal.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "projeto": {
+     "type": "string",
+     "description": "Id do projeto (opcional)."
+    },
+    "canal": {
+     "type": "string",
+     "description": "Id ou nome do canal."
+    },
+    "nome": {
+     "type": "string",
+     "description": "Novo nome."
+    },
+    "volumeDb": {
+     "type": "number",
+     "description": "Volume em dB (-60 a 6).",
+     "minimum": -60,
+     "maximum": 6
+    },
+    "pan": {
+     "type": "number",
+     "description": "Pan (-1 esquerda, 1 direita).",
+     "minimum": -1,
+     "maximum": 1
+    },
+    "mudo": {
+     "type": "boolean",
+     "description": "Silencia o canal."
+    },
+    "preset": {
+     "type": "string",
+     "description": "Preset de fábrica do motor do canal."
+    }
+   },
+   "required": [
+    "canal"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "daw_remover_canal",
+  "title": "Remover canal",
+  "description": "Remove um canal e as notas dele em todos os padrões.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "projeto": {
+     "type": "string",
+     "description": "Id do projeto (opcional)."
+    },
+    "canal": {
+     "type": "string",
+     "description": "Id ou nome do canal."
+    }
+   },
+   "required": [
+    "canal"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true
+  }
+ },
+ {
+  "name": "daw_escrever_notas",
+  "title": "Escrever notas num padrão",
+  "description": "Escreve notas de um canal num padrão (cria o padrão se o nome não existir). Tempos em semínimas: num 4/4, um compasso = 4 tempos. Com \"substituir\" (padrão true) troca as notas que o canal tinha no padrão.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "projeto": {
+     "type": "string",
+     "description": "Id do projeto (opcional)."
+    },
+    "padrao": {
+     "type": "string",
+     "description": "Id ou nome do padrão (padrão: o atual; nome novo cria)."
+    },
+    "canal": {
+     "type": "string",
+     "description": "Id ou nome do canal."
+    },
+    "notas": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "nota": {
+        "type": [
+         "integer",
+         "string"
+        ],
+        "description": "MIDI (60 = C4) ou nome (\"C4\", \"F#3\"). Bateria: 36 bumbo, 38 caixa, 39 palmas, 42 chimbal fechado, 46 aberto, 49 prato."
+       },
+       "inicio": {
+        "type": "number",
+        "description": "Início em tempos (semínimas) desde o começo do padrão; 0.25 = uma semicolcheia."
+       },
+       "duracao": {
+        "type": "number",
+        "description": "Duração em tempos (padrão 0.25)."
+       },
+       "vel": {
+        "type": "integer",
+        "description": "Força de 1 a 127 (padrão 100)."
+       }
+      },
+      "required": [
+       "nota",
+       "inicio"
+      ]
+     },
+     "description": "Notas."
+    },
+    "substituir": {
+     "type": "boolean",
+     "description": "Troca as notas existentes do canal neste padrão (padrão true)."
+    },
+    "compassos": {
+     "type": "integer",
+     "description": "Comprimento mínimo do padrão em compassos.",
+     "minimum": 1,
+     "maximum": 64
+    }
+   },
+   "required": [
+    "canal",
+    "notas"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "daw_escrever_passos",
+  "title": "Programar passos (bateria)",
+  "description": "Programa o sequenciador de passos de um canal, como no Channel Rack: \"x\" toca, \"X\" toca forte, \".\" ou \"-\" pausa; cada caractere é uma semicolcheia (16 = um compasso 4/4). Espaços e \"|\" são ignorados. Ex.: \"x...x...x...x...\" (bumbo nos tempos).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "projeto": {
+     "type": "string",
+     "description": "Id do projeto (opcional)."
+    },
+    "padrao": {
+     "type": "string",
+     "description": "Id ou nome do padrão (padrão: o atual; nome novo cria)."
+    },
+    "canal": {
+     "type": "string",
+     "description": "Id ou nome do canal."
+    },
+    "passos": {
+     "type": "string",
+     "description": "Sequência de passos."
+    },
+    "nota": {
+     "type": [
+      "integer",
+      "string"
+     ],
+     "description": "Nota (padrão: a nota dos passos do canal)."
+    }
+   },
+   "required": [
+    "canal",
+    "passos"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "daw_colocar_na_playlist",
+  "title": "Colocar padrão na playlist",
+  "description": "Coloca um padrão na playlist (o arranjo da música) a partir de um compasso, repetindo quantas vezes quiser, e põe a DAW no modo música.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "projeto": {
+     "type": "string",
+     "description": "Id do projeto (opcional)."
+    },
+    "padrao": {
+     "type": "string",
+     "description": "Id ou nome do padrão."
+    },
+    "compasso": {
+     "type": "integer",
+     "description": "Compasso inicial (1 = começo).",
+     "minimum": 1
+    },
+    "repeticoes": {
+     "type": "integer",
+     "description": "Quantas vezes seguidas (padrão 1).",
+     "minimum": 1,
+     "maximum": 256
+    },
+    "faixa": {
+     "type": "integer",
+     "description": "Faixa da playlist (1, 2…). Padrão: a primeira livre.",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "padrao",
+    "compasso"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "daw_remover_clipes",
+  "title": "Remover clipes da playlist",
+  "description": "Remove clipes da playlist pelos ids (veja daw_ler_projeto) ou todos de um padrão.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "projeto": {
+     "type": "string",
+     "description": "Id do projeto (opcional)."
+    },
+    "clipes": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Ids dos clipes."
+    },
+    "padrao": {
+     "type": "string",
+     "description": "Ou: remove todos os clipes deste padrão."
+    }
+   },
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": true
+  }
+ },
+ {
+  "name": "daw_transporte",
+  "title": "Tocar ou parar a DAW",
+  "description": "Toca, para ou volta ao início na DAW aberta (a pessoa precisa estar com a DAW aberta; o navegador pode exigir um clique antes do primeiro som).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "acao": {
+     "type": "string",
+     "description": "tocar, parar ou inicio.",
+     "enum": [
+      "tocar",
+      "parar",
+      "inicio"
+     ]
+    }
+   },
+   "required": [
+    "acao"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": false,
+   "destructiveHint": false
+  }
+ },
+ {
+  "name": "sintetizador_presets",
+  "title": "Presets do sintetizador",
+  "description": "Lista os motores de síntese e os presets de fábrica de cada um (para daw_adicionar_canal), mais os presets salvos pela pessoa.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "motor": {
+     "type": "string",
+     "description": "Só deste motor (opcional)."
+    }
+   },
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false
+  }
+ }
+]

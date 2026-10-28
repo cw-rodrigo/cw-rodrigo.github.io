@@ -11,6 +11,8 @@ import { defaults as synthDefaults } from '/lib/synth/schemas.js';
 export const COLORS = ['#4c8dff', '#f0883e', '#3fb950', '#d2a8ff', '#ff7b72', '#39c5cf', '#e3b341', '#a5d6ff', '#ffa198', '#7ee787'];
 export const VERSION = 2;
 export const STEP = 0.25; // um passo do sequenciador = 1/16 (um quarto de tempo)
+/** De onde grava: 'pocket' (acha a entrada USB da pedaleira), 'default' (microfone), um deviceId, ou 'notes' (só notas). */
+export const REC_DEFAULT = { source: 'pocket', channel: 'stereo', monitor: false, pmSlot: null };
 
 // ---------------------------------------------------------------- criação
 export function newInsert(p, name, extra = {}) {
@@ -18,7 +20,6 @@ export function newInsert(p, name, extra = {}) {
   return {
     id: uid(), name: name || `Insert ${n}`, color: COLORS[(n + 3) % COLORS.length],
     vol: 0, pan: 0, mute: false, solo: false, fx: [], sends: [],
-    arm: false, input: { deviceId: '', channel: 'stereo', monitor: false, match: '' },
     ...extra,
   };
 }
@@ -48,7 +49,7 @@ export function newPlaylistTrack(p) {
 export function newProject(name = 'Meu projeto') {
   const p = {
     id: uid(), name, version: VERSION, created: Date.now(), updated: Date.now(),
-    bpm: 120, sig: 4, mode: 'pattern', snap: STEP, zoom: 24, metro: false, countIn: false,
+    bpm: 120, sig: 4, mode: 'pattern', rec: { ...REC_DEFAULT }, snap: STEP, zoom: 24, metro: false, countIn: false,
     loop: { on: false, start: 0, end: 16 }, latencyMs: null, recQuantize: 0,
     channels: [], patterns: [], curPattern: null,
     playlist: { tracks: [], clips: [] },
@@ -60,7 +61,7 @@ export function newProject(name = 'Meu projeto') {
   p.channels.push(newChannel(p, 'Baixo', { engine: 'subtractive', params: { mono: true, o1Oct: -1, cutoff: 900, res: 0.3, aeS: 0.9 } }, { stepNote: 36 }));
   p.channels.push(newChannel(p, 'Teclado', { engine: 'fm', params: {} }, { stepNote: 60 }));
   // insert pronto para gravar a Pocket Master pela entrada USB dela
-  p.mixer.inserts.push(newInsert(p, 'Pocket Master', { input: { deviceId: '', channel: 'stereo', monitor: false, match: 'pocket' } }));
+  p.mixer.inserts.push(newInsert(p, 'Gravações'));
   for (let i = 0; i < 6; i++) p.playlist.tracks.push(newPlaylistTrack(p));
   const pat = newPattern(p);
   p.patterns.push(pat);
@@ -222,7 +223,8 @@ export function upgrade(old) {
         p.playlist.clips.push({ id: uid(), kind: 'pattern', track: track.id, start: c.start, len: c.len, pattern: pat.id });
       }
     } else {
-      const ins = newInsert(p, t.name, { color: t.color, vol: t.vol || 0, pan: t.pan || 0, mute: !!t.mute, solo: !!t.solo, arm: !!t.arm, input: { deviceId: '', channel: 'stereo', monitor: false, match: '', ...(t.input || {}) }, pmSlot: t.pm?.slot ?? null, fx: [...eqFx(t), ...(t.rev ? [{ type: 'reverb', on: true, params: { mix: t.rev } }] : [])] });
+      if (t.arm && t.input?.deviceId) p.rec = { ...p.rec, source: t.input.deviceId, channel: t.input.channel || 'stereo', pmSlot: t.pm?.slot ?? null };
+      const ins = newInsert(p, t.name, { color: t.color, vol: t.vol || 0, pan: t.pan || 0, mute: !!t.mute, solo: !!t.solo, fx: [...eqFx(t), ...(t.rev ? [{ type: 'reverb', on: true, params: { mix: t.rev } }] : [])] });
       p.mixer.inserts.push(ins);
       for (const c of t.clips) p.playlist.clips.push({ id: uid(), kind: 'audio', track: track.id, start: c.start, dur: c.dur, audioId: c.audioId, offset: c.offset || 0, gain: c.gain || 0, insert: ins.id, name: c.name });
     }
@@ -237,7 +239,10 @@ function fill(p) {
   const base = newProject(p.name);
   const q = { ...base, ...p, loop: { ...base.loop, ...(p.loop || {}) }, playlist: { tracks: [], clips: [], ...(p.playlist || {}) }, mixer: { inserts: [], ...(p.mixer || {}) } };
   if (!q.mixer.inserts.length) q.mixer.inserts = [base.mixer.inserts[0]];
-  q.mixer.inserts = q.mixer.inserts.map((i) => ({ fx: [], sends: [], input: { deviceId: '', channel: 'stereo', monitor: false, match: '' }, ...i }));
+  // versões anteriores armavam um insert com a entrada; agora a fonte de gravação é do projeto
+  const armed = q.mixer.inserts.find((i) => i.arm && i.input);
+  q.rec = { ...REC_DEFAULT, ...(p.rec || (armed ? { source: armed.input.match === 'pocket' && !armed.input.deviceId ? 'pocket' : armed.input.deviceId || 'default', channel: armed.input.channel || 'stereo', pmSlot: armed.pmSlot ?? null } : {})) };
+  q.mixer.inserts = q.mixer.inserts.map(({ arm, input, pmSlot, ...i }) => ({ fx: [], sends: [], ...i }));
   q.channels = (q.channels || []).map((c) => ({ vol: 0, pan: 0, mute: false, stepNote: 60, ...c, synth: { params: {}, fx: {}, ...(c.synth || {}) } }));
   if (!q.patterns?.length) q.patterns = [newPattern(q)];
   if (!patternOf(q, q.curPattern)) q.curPattern = q.patterns[0].id;

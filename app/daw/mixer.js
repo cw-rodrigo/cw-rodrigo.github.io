@@ -1,6 +1,5 @@
-// Mixer (como o do FL): uma faixa por insert, com medidor, fader, pan, mudo/solo e armar para gravar.
-// O insert selecionado mostra ao lado os slots de efeitos, os envios para outros inserts e a entrada
-// de gravação (ex.: a entrada USB da Pocket Master).
+// Mixer (como o do FL): uma faixa por insert, com medidor, fader, pan e mudo/solo.
+// O insert selecionado mostra ao lado os slots de efeitos e os envios para outros inserts.
 import { esc } from '/lib/core/ui.js';
 import { FX, FX_IDS, fxDefaults } from './fx.js';
 
@@ -12,7 +11,6 @@ export const MAX_SLOTS = 8;
 
 /**
  * h: { project(), selected(), select(insId), begin(), end(opts), change(fn, opts), live(), level(insId),
- *      inputs() -> Promise<[{deviceId,label}]>, pmHtml(ins) -> HTML da Pocket Master, onPm(e, ins), monitor(ins), arm(ins),
  *      remove(insId), add(), openSlot (slot aberto) }
  */
 export function mixerView(el, h) {
@@ -27,7 +25,6 @@ export function mixerView(el, h) {
         </div>
         <div class="mix-detail flex-grow-1">${detail(p, ins)}</div>
       </div>`;
-    fillInputs(ins);
   }
   function strip(p, i, n, selected) {
     const master = n === 0;
@@ -41,8 +38,7 @@ export function mixerView(el, h) {
       <input type="range" class="form-range mix-pan" data-m="pan" min="-1" max="1" step="0.01" value="${i.pan}" title="Pan" aria-label="Pan de ${esc(i.name)}">
       <div class="d-flex justify-content-center gap-1">
         <button class="btn btn-sm ${i.mute ? 'btn-outline-secondary' : 'btn-success'} mix-btn" type="button" data-mx="mute" title="${i.mute ? 'Ligar' : 'Silenciar'}" aria-pressed="${!i.mute}"><i class="bi bi-power"></i></button>
-        ${master ? '' : `<button class="btn btn-sm ${i.solo ? 'btn-info' : 'btn-outline-secondary'} mix-btn" type="button" data-mx="solo" title="Solo" aria-pressed="${i.solo}">S</button>
-        <button class="btn btn-sm ${i.arm ? 'btn-danger' : 'btn-outline-secondary'} mix-btn" type="button" data-mx="arm" title="Armar para gravar a entrada" aria-pressed="${i.arm}"><i class="bi bi-record-fill"></i></button>`}
+        ${master ? '' : `<button class="btn btn-sm ${i.solo ? 'btn-info' : 'btn-outline-secondary'} mix-btn" type="button" data-mx="solo" title="Solo" aria-pressed="${i.solo}">S</button>`}
       </div>
       <div class="mix-fxdots" aria-hidden="true">${i.fx.map((f) => `<i class="${f.on ? 'on' : ''}" title="${esc(FX[f.type].name)}"></i>`).join('')}</div>
     </div>`;
@@ -82,27 +78,14 @@ export function mixerView(el, h) {
         ${ins.sends.map((s, k) => `<div class="d-flex align-items-center gap-2 mb-1" data-send="${k}"><span class="small text-nowrap">→ ${esc(p.mixer.inserts.find((x) => x.id === s.to)?.name || '?')}</span>
           <input type="range" class="form-range" data-send-amt min="0" max="1" step="0.01" value="${s.amount}" aria-label="Quantidade do envio"><button class="btn btn-sm btn-link text-danger" type="button" data-mx="unsend" aria-label="Tirar envio"><i class="bi bi-x-lg"></i></button></div>`).join('')}
         ${others.length ? `<select class="form-select form-select-sm w-auto" data-d="send" aria-label="Novo envio"><option value="">+ Enviar para…</option>${others.filter((x) => !ins.sends.some((s) => s.to === x.id)).map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select>` : ''}
-        <h3 class="h6 mt-3">Entrada para gravar</h3>
-        <div class="row g-2">
-          <div class="col-sm-7"><label class="form-label small mb-0" for="mx-in">Gravar de</label><select class="form-select form-select-sm" id="mx-in" data-d="device"><option value="">${ins.input.match === 'pocket' ? 'Pocket Master (procurar sozinho)' : 'Entrada padrão'}</option></select></div>
-          <div class="col-sm-5"><label class="form-label small mb-0" for="mx-ch">Canais</label><select class="form-select form-select-sm" id="mx-ch" data-d="channel">${[['stereo', 'Estéreo'], ['left', 'Só o esquerdo'], ['right', 'Só o direito']].map(([v, l]) => `<option value="${v}"${ins.input.channel === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
-        </div>
-        <div class="form-check form-switch mt-2"><input class="form-check-input" type="checkbox" role="switch" id="mx-mon" data-d="monitor"${ins.input.monitor ? ' checked' : ''}><label class="form-check-label small" for="mx-mon">Ouvir a entrada pelo site quando armado (desligue se já ouve pelo fone da pedaleira)</label></div>
-        <div class="mt-2" data-r="pm">${h.pmHtml(ins)}</div>`}`;
-  }
-  async function fillInputs(ins) {
-    const s = el.querySelector('#mx-in');
-    if (!s) return;
-    const list = await h.inputs();
-    if (!list.length) return;
-    s.innerHTML = `<option value="">${ins.input.match === 'pocket' ? 'Pocket Master (procurar sozinho)' : 'Entrada padrão'}</option>` + list.map((d) => `<option value="${esc(d.deviceId)}"${d.deviceId === ins.input.deviceId ? ' selected' : ''}>${esc(d.label)}</option>`).join('');
+        `}`;
   }
   const insOf = (t) => h.project().mixer.inserts.find((x) => x.id === (t.closest('[data-ins]')?.dataset.ins || h.selected())) || h.project().mixer.inserts[0];
   const slotOf = (t) => { const s = t.closest('[data-slot]'); return s ? Number(s.dataset.slot) : -1; };
 
   el.addEventListener('click', (e) => {
     const b = e.target.closest('[data-mx], [data-s]');
-    if (!b) { if (e.target.closest('[data-r="pm"]')) h.onPm(e, insOf(e.target)); return; }
+    if (!b) return;
     const ins = insOf(b);
     if (b.dataset.s && b.tagName === 'BUTTON') {
       e.preventDefault();
@@ -118,7 +101,6 @@ export function mixerView(el, h) {
     if (a === 'add') { h.add(); return; }
     if (a === 'remove') { h.remove(ins.id); return; }
     if (a === 'unsend') { const k = Number(b.closest('[data-send]').dataset.send); h.change(() => { ins.sends.splice(k, 1); }); return; }
-    if (a === 'arm') { h.arm(ins); return; }
     if (a === 'mute' || a === 'solo') h.change(() => { ins[a] = !ins[a]; }, { structure: false });
   });
   el.addEventListener('toggle', (e) => { const s = e.target.closest?.('[data-slot]'); if (s && s.open) h.openSlot = Number(s.dataset.slot); }, true);
@@ -146,9 +128,6 @@ export function mixerView(el, h) {
     if (d === 'name') h.change(() => { ins.name = t.value.trim() || ins.name; }, { structure: false });
     if (d === 'addfx' && t.value) { const type = t.value; h.openSlot = ins.fx.length; h.change(() => { ins.fx.push({ type, on: true, params: fxDefaults(type) }); }); }
     if (d === 'send' && t.value) { const to = t.value; h.change(() => { ins.sends.push({ to, amount: 0.3 }); }); }
-    if (d === 'device') h.change(() => { ins.input.deviceId = t.value; }, { structure: false }).then(() => h.monitor(ins));
-    if (d === 'channel') h.change(() => { ins.input.channel = t.value; }, { structure: false }).then(() => h.monitor(ins));
-    if (d === 'monitor') h.change(() => { ins.input.monitor = t.checked; }, { structure: false }).then(() => h.monitor(ins));
   });
   return { render };
 }

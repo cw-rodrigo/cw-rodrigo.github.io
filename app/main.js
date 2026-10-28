@@ -4,6 +4,8 @@ import * as PM from '/lib/pocketmaster/session.js';
 import * as C from '/lib/core/cloud.js';
 import { onSyncStatus, syncStatus } from '/lib/core/sync.js';
 import { $, $$ } from '/lib/core/ui.js';
+import { installAgentApi } from '/lib/agent/webmcp.js';
+import { startBridge } from '/lib/agent/bridge.js';
 
 const view = $('#view');
 const SECTIONS = {
@@ -14,6 +16,7 @@ const SECTIONS = {
   conta: () => import('./account.js'),
   sintetizador: () => import('./synth/synth.js'),
   daw: () => import('./daw/daw.js'),
+  agentes: () => import('./agentes.js'),
 };
 const TOOLS = {
   tom: () => import('./tools/tom.js'),
@@ -106,4 +109,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
 }
 
 window.__estudio = { P, PM, C };
+// ferramentas para agentes de IA (WebMCP, window.estudio e a ponte com o servidor MCP local)
+installAgentApi();
+startBridge();
 route();

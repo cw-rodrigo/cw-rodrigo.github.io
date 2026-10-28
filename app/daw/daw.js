@@ -9,6 +9,7 @@ import { mixerView } from './mixer.js';
 import { autoEditor } from './autoedit.js';
 import { targetsOf, resolveTarget } from './automation.js';
 import * as D from './project.js';
+import { setLive } from '/lib/agent/live.js';
 import { synthPanel } from '/lib/synth/ui.js';
 import { ENGINES } from '/lib/synth/schemas.js';
 import { pianoKeyboard, qwertyKeys, midiKeyboards, noteLabel } from '/lib/synth/keyboard.js';
@@ -90,7 +91,11 @@ function session(el, ctx, p0) {
       <div class="btn-group" role="group" aria-label="Transporte">
         <button class="btn btn-outline-secondary" type="button" data-a="home" title="Voltar ao início (Home)"><i class="bi bi-skip-start-fill"></i><span class="visually-hidden">Início</span></button>
         <button class="btn btn-outline-success" type="button" data-a="play" title="Tocar / parar (Espaço)"><i class="bi bi-play-fill"></i><span class="visually-hidden">Tocar</span></button>
-        <button class="btn btn-outline-danger" type="button" data-a="rec" title="Gravar (R): os inserts armados no mixer e as notas que você tocar"><i class="bi bi-record-fill"></i><span class="visually-hidden">Gravar</span></button>
+        <button class="btn btn-outline-danger" type="button" data-a="rec" title="Gravar (R)"><i class="bi bi-record-fill"></i><span class="visually-hidden">Gravar</span></button>
+        <div class="btn-group" role="group">
+          <button class="btn btn-outline-danger dropdown-toggle dropdown-toggle-split" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" data-r="recsrc" title="De onde gravar"><span class="small" data-r="srcname"></span></button>
+          <div class="dropdown-menu p-3 rec-menu" data-r="recmenu"></div>
+        </div>
       </div>
       <div class="daw-pos font-monospace small border rounded px-2 py-1 text-center" data-r="pos">1.1.00 · 0:00.0</div>
       <div class="input-group input-group-sm" style="width:auto">
@@ -100,7 +105,6 @@ function session(el, ctx, p0) {
       </div>
       <div class="btn-group btn-group-sm" role="group" aria-label="Opções">
         <input type="checkbox" class="btn-check" id="daw-metro" data-p="metro" autocomplete="off"><label class="btn btn-outline-secondary" for="daw-metro" title="Metrônomo"><i class="bi bi-stopwatch"></i><span class="visually-hidden">Metrônomo</span></label>
-        <input type="checkbox" class="btn-check" id="daw-count" data-p="countIn" autocomplete="off"><label class="btn btn-outline-secondary" for="daw-count" title="Contagem de 1 compasso antes de gravar"><i class="bi bi-hourglass-split"></i><span class="visually-hidden">Contagem</span></label>
         <input type="checkbox" class="btn-check" id="daw-loop" data-p="loop" autocomplete="off"><label class="btn btn-outline-secondary" for="daw-loop" title="Loop na playlist (arraste na metade de cima da régua)"><i class="bi bi-arrow-repeat"></i><span class="visually-hidden">Loop</span></label>
       </div>
       <select class="form-select form-select-sm" style="width:auto" data-p="snap" aria-label="Grade">${SNAPS.map(([v, l]) => `<option value="${v}">Grade ${l}</option>`).join('')}</select>
@@ -141,7 +145,7 @@ function session(el, ctx, p0) {
     <details class="small text-body-secondary mt-2"><summary>Como usar (parecido com o FL Studio)</summary>
       <p class="mt-2 mb-1"><strong>Channel Rack:</strong> cada canal é um instrumento; clique nos passos para montar a batida do padrão. Notas livres e acordes vão no piano roll (botão de notas do canal). Cada canal manda o som para um insert do mixer.</p>
       <p class="mb-1"><strong>Playlist:</strong> no modo SONG, clique num espaço vazio para pintar o padrão atual (ou o último clipe escolhido); arraste para mover, puxe as bordas, Shift+arrastar duplica, botão direito apaga, Alt desliga a grade. Duplo clique abre o clipe.</p>
-      <p class="mb-1"><strong>Gravar a Pocket Master:</strong> ligue-a no computador pelo USB-C, arme o insert "Pocket Master" no mixer (bolinha vermelha) e aperte gravar: o áudio entra na playlist. Teclas tocadas durante a gravação viram notas do canal selecionado.</p>
+      <p class="mb-1"><strong>Gravar a Pocket Master:</strong> ligue-a no computador pelo USB-C e aperte o botão vermelho de gravar (ou R). O áudio entra na playlist, onde está o cursor. Na setinha ao lado do botão dá para trocar a fonte (microfone, outra entrada ou só notas) e conferir o nível.</p>
       <p class="mb-0"><strong>Atalhos:</strong> Espaço toca/para · R grava · L troca PAT/SONG · Ctrl+Z desfaz · Delete apaga o clipe · teclado do computador (A W S E D…) toca o canal selecionado.</p>
     </details>
   </div>`;
@@ -203,7 +207,6 @@ function session(el, ctx, p0) {
     el.querySelector('[data-p="bpm"]').value = p.bpm;
     el.querySelector('[data-p="sig"]').value = p.sig;
     el.querySelector('[data-p="metro"]').checked = p.metro;
-    el.querySelector('[data-p="countIn"]').checked = p.countIn;
     el.querySelector('[data-p="loop"]').checked = p.loop.on;
     el.querySelector('[data-p="snap"]').value = p.snapBar ? 'bar' : String(p.snap);
     el.querySelector(`#daw-${p.mode === 'song' ? 'song' : 'pat'}`).checked = true;
@@ -268,7 +271,7 @@ function session(el, ctx, p0) {
         for (const pat of p.patterns) delete pat.notes[ch.id];
         // o insert criado para ele sai junto se ninguém mais usa
         const ins = D.insertOf(p, ch.insert);
-        if (ins && ins !== p.mixer.inserts[0] && !p.channels.some((c) => c.insert === ins.id) && !ins.arm && !p.playlist.clips.some((c) => c.insert === ins.id)) {
+        if (ins && ins !== p.mixer.inserts[0] && ins.id !== p.rec.insert && !p.channels.some((c) => c.insert === ins.id) && !p.playlist.clips.some((c) => c.insert === ins.id)) {
           p.mixer.inserts = p.mixer.inserts.filter((x) => x !== ins);
           for (const x of p.mixer.inserts) x.sends = x.sends.filter((s) => s.to !== ins.id);
         }
@@ -425,21 +428,15 @@ function session(el, ctx, p0) {
   }
 
   // mixer
-  const pmState = { inputs: null };
   const mixHost = document.createElement('div'); // o mixer guarda seus elementos (e eventos) entre as abas
   const mixer = mixerView(mixHost, {
     project: () => p, selected: () => ui.ins, select: (id) => { ui.ins = id; mixer.render(); },
     begin, end, change, live,
-    inputs: async () => {
-      if (pmState.inputs) return pmState.inputs;
-      try { const l = (await listInputs()).filter((d) => d.label && d.deviceId !== 'default'); if (l.length) pmState.inputs = l; return l; } catch { return []; }
-    },
-    pmHtml, onPm, monitor: (ins) => applyMonitor(ins), arm: (ins) => toggleArm(ins),
     add: () => change(() => { const ins = D.newInsert(p); p.mixer.inserts.push(ins); ui.ins = ins.id; }),
     remove: async (id) => {
       const ins = D.insertOf(p, id);
       if (!(await confirmBox(`Apagar o insert “${ins.name}”? O que mandava para ele passa a ir para o master.`, { ok: 'Apagar', danger: true }))) return;
-      await engine.setMonitor(ins, false);
+      await engine.setMonitor(id, null);
       change(() => {
         p.mixer.inserts = p.mixer.inserts.filter((x) => x !== ins);
         for (const x of p.mixer.inserts) x.sends = x.sends.filter((s) => s.to !== id);
@@ -449,48 +446,98 @@ function session(el, ctx, p0) {
       });
     },
   });
-  function pmHtml(ins) {
-    const dev = PM.device();
-    return `<h3 class="h6"><i class="bi bi-usb-symbol"></i> Pocket Master</h3>
-      <p class="small text-body-secondary mb-2">Ligue a pedaleira no computador com cabo USB-C (ela vira uma entrada de áudio), escolha-a acima e arme o insert. Conectando o controle dela aqui, o preset também troca sozinho ao armar.</p>
-      ${dev ? `<div class="input-group input-group-sm"><label class="input-group-text" for="mx-slot">Preset ao armar</label>
-        <select class="form-select" id="mx-slot" data-pm="slot"><option value="">Não trocar</option>${Array.from({ length: TOTAL_PRESETS }, (_, i) => `<option value="${i}"${ins.pmSlot === i ? ' selected' : ''}>${PM.slotLabel(i)} ${esc(dev.names?.[i] || '')}</option>`).join('')}</select>
-        <button class="btn btn-outline-primary" type="button" data-pm="now">Trocar agora</button></div>
-        <div class="form-text">Conectada pelo ${PM.via() === 'ble' ? 'Bluetooth' : 'USB'}. Agora: ${esc(PM.currentLabel())}</div>`
-    : PM.connectButtonsHtml()}`;
+
+  // ---------------------------------------------------------------- de onde gravar (um lugar só, ao lado do botão)
+  const recState = { inputs: [], stream: null, an: null, raf: 0 };
+  const SRC_NAMES = { pocket: 'Pocket Master', default: 'Microfone', notes: 'Só notas' };
+  const srcName = () => SRC_NAMES[p.rec.source] || recState.inputs.find((d) => d.deviceId === p.rec.source)?.label || 'Entrada';
+  async function loadInputs(ask = false) {
+    try {
+      let list = await listInputs();
+      if (ask && !list.some((d) => d.label)) { const s = await getInput(); s.getTracks().forEach((t) => t.stop()); list = await listInputs(); }
+      recState.inputs = list.filter((d) => d.label && d.deviceId && d.deviceId !== 'default');
+    } catch { recState.inputs = []; }
   }
-  async function onPm(e, ins) {
-    const conn = e.target.closest('[data-connect]');
-    if (conn) {
-      busyButton(conn, true, 'Conectando…');
-      try { await PM.connect(conn.dataset.connect); mixer.render(); } catch (err) { toast(PM.connectError(err), 'danger'); busyButton(conn, false); }
-      return;
+  /** Entrada para gravar: { deviceId, channel } (null = só notas). A Pocket Master é achada pelo nome. */
+  async function recInput() {
+    const r = p.rec;
+    if (r.source === 'notes') return null;
+    if (r.source === 'pocket') {
+      await loadInputs(true);
+      const d = recState.inputs.find((x) => PEDAL_NAME.test(x.label));
+      if (!d) toast('Não achei a Pocket Master entre as entradas de áudio (ela precisa estar ligada no USB). Gravando do microfone.', 'warning');
+      return { deviceId: d?.deviceId || '', channel: r.channel };
     }
-    if (e.target.closest('[data-pm="now"]') && ins.pmSlot != null) PM.device()?.select(ins.pmSlot).then(() => toast(`Pedaleira no preset ${PM.slotLabel(ins.pmSlot)}.`)).catch((err) => toast(err.message, 'danger'));
+    return { deviceId: r.source === 'default' ? '' : r.source, channel: r.channel };
   }
-  mixHost.addEventListener('change', (e) => {
-    if (e.target.dataset.pm === 'slot') { const ins = D.insertOf(p, ui.ins); change(() => { ins.pmSlot = e.target.value === '' ? null : Number(e.target.value); }, { structure: false }); }
+  /** Insert por onde a gravação passa (criado na primeira vez). */
+  function recInsert() {
+    let ins = D.insertOf(p, p.rec.insert) || p.mixer.inserts.find((i) => i.name === 'Gravações');
+    if (!ins) { ins = D.newInsert(p, 'Gravações'); p.mixer.inserts.push(ins); }
+    p.rec.insert = ins.id;
+    return ins;
+  }
+  function renderRecMenu() {
+    const r = p.rec, dev = PM.device();
+    const opt = (v, l) => `<option value="${esc(v)}"${r.source === v ? ' selected' : ''}>${esc(l)}</option>`;
+    R('recmenu').innerHTML = `
+      <label class="form-label small mb-0" for="rec-src">Gravar de</label>
+      <select class="form-select form-select-sm mb-2" id="rec-src" data-rec="source">
+        ${opt('pocket', 'Pocket Master (entrada USB)')}${opt('default', 'Microfone padrão')}
+        ${recState.inputs.map((d) => opt(d.deviceId, d.label)).join('')}
+        ${opt('notes', 'Só as notas do teclado')}
+      </select>
+      ${r.source === 'notes' ? '' : `<div class="d-flex align-items-center gap-2 mb-2 small"><span>Nível</span><div class="daw-meter flex-grow-1" style="height:8px"><div data-r="reclvl"></div></div></div>
+      <div class="row g-2 mb-2"><div class="col-7"><select class="form-select form-select-sm" data-rec="channel" aria-label="Canais">${[['stereo', 'Estéreo'], ['left', 'Só o esquerdo'], ['right', 'Só o direito']].map(([v, l]) => `<option value="${v}"${r.channel === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div class="col-5 d-flex align-items-center"><div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" role="switch" id="rec-mon" data-rec="monitor"${r.monitor ? ' checked' : ''}><label class="form-check-label small" for="rec-mon">Ouvir</label></div></div></div>`}
+      <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" role="switch" id="rec-count" data-rec="countIn"${p.countIn ? ' checked' : ''}><label class="form-check-label small" for="rec-count">Contar 1 compasso antes</label></div>
+      ${r.source === 'pocket' ? (dev ? `<label class="form-label small mb-0" for="rec-pm">Preset da pedaleira ao gravar</label><select class="form-select form-select-sm" id="rec-pm" data-rec="pmSlot"><option value="">Não trocar</option>${Array.from({ length: TOTAL_PRESETS }, (_, i) => `<option value="${i}"${r.pmSlot === i ? ' selected' : ''}>${PM.slotLabel(i)} ${esc(dev.names?.[i] || '')}</option>`).join('')}</select>`
+    : '<p class="small text-body-secondary mb-1">Ligue a pedaleira no computador com cabo USB-C: o som dela entra como uma placa de som.</p><button class="btn btn-sm btn-link px-0" type="button" data-rec="connect">Conectar o controle dela (para trocar o preset ao gravar)</button>') : ''}
+      <p class="small text-body-secondary mt-2 mb-0">O que tocar no teclado durante a gravação vira notas do canal selecionado.</p>`;
+    R('srcname').textContent = srcName();
+  }
+  /** Medidor da entrada enquanto o menu está aberto (para conferir se o som está chegando). */
+  async function startLevel() {
+    stopLevel();
+    const input = p.rec.source === 'notes' ? null : await recInput().catch(() => null);
+    if (!input) return;
+    try {
+      recState.stream = await getInput(input.deviceId || null);
+      const src = ctx.createMediaStreamSource(recState.stream);
+      recState.an = ctx.createAnalyser(); recState.an.fftSize = 1024;
+      src.connect(recState.an);
+      const buf = new Float32Array(1024);
+      const tick = () => {
+        recState.an.getFloatTimeDomainData(buf);
+        let pk = 0; for (const v of buf) pk = Math.max(pk, Math.abs(v));
+        const m = R('recmenu').querySelector('[data-r="reclvl"]');
+        if (m) { m.style.width = Math.min(100, pk * 100) + '%'; m.classList.toggle('clip', pk > 0.98); }
+        recState.raf = requestAnimationFrame(tick);
+      };
+      tick();
+    } catch (err) { toast(captureError(err, 'a entrada de áudio'), 'danger'); }
+  }
+  function stopLevel() { cancelAnimationFrame(recState.raf); recState.stream?.getTracks().forEach((t) => t.stop()); recState.stream = null; recState.an = null; }
+  async function applyMonitor() {
+    try { await engine.setMonitor(recInsert().id, p.rec.monitor && p.rec.source !== 'notes' ? await recInput() : null); } catch (err) { toast(captureError(err, 'a entrada de áudio'), 'danger'); }
+  }
+  const recDrop = R('recsrc').parentElement;
+  recDrop.addEventListener('show.bs.dropdown', async () => { await loadInputs(); renderRecMenu(); startLevel(); });
+  recDrop.addEventListener('hide.bs.dropdown', stopLevel);
+  R('recmenu').addEventListener('change', async (e) => {
+    const k = e.target.dataset.rec;
+    if (!k) return;
+    if (k === 'countIn') { p.countIn = e.target.checked; persist(); renderBar(); return; }
+    if (k === 'monitor') { p.rec.monitor = e.target.checked; persist(); applyMonitor(); return; }
+    if (k === 'pmSlot') { p.rec.pmSlot = e.target.value === '' ? null : Number(e.target.value); persist(); if (p.rec.pmSlot != null) PM.device()?.select(p.rec.pmSlot).catch(() => {}); return; }
+    p.rec[k] = e.target.value;
+    persist(); renderRecMenu(); startLevel(); applyMonitor();
   });
-  /** Insert da Pocket Master: acha a entrada USB dela pelo nome. */
-  async function resolveInput(ins) {
-    if (ins.input.deviceId || ins.input.match !== 'pocket') return;
-    let list = await listInputs().catch(() => []);
-    if (!list.some((d) => d.label)) { const s = await getInput(); s.getTracks().forEach((t) => t.stop()); list = await listInputs().catch(() => []); }
-    pmState.inputs = null;
-    const d = list.find((x) => PEDAL_NAME.test(x.label));
-    if (d) ins.input.deviceId = d.deviceId;
-    else toast('Não achei a entrada USB da Pocket Master; vou usar a entrada padrão. Escolha a entrada no mixer.', 'warning');
-  }
-  async function applyMonitor(ins) {
-    try { await resolveInput(ins); await engine.setMonitor(ins, ins.arm && ins.input.monitor); } catch (err) { toast(captureError(err, 'a entrada de áudio'), 'danger'); }
-  }
-  async function toggleArm(ins) {
-    await resumeAudio();
-    await change(() => { ins.arm = !ins.arm; }, { structure: false });
-    if (ins.arm && ins.pmSlot != null && PM.device()) PM.device().select(ins.pmSlot).then(() => toast(`Pedaleira no preset ${PM.slotLabel(ins.pmSlot)}.`)).catch(() => {});
-    if (ins.arm) { try { await resolveInput(ins); persist(); } catch (err) { toast(captureError(err, 'a entrada de áudio'), 'danger'); } }
-    applyMonitor(ins);
-  }
+  R('recmenu').addEventListener('click', async (e) => {
+    if (e.target.closest('[data-rec="connect"]')) {
+      try { await PM.connect('usb'); renderRecMenu(); } catch (err) { toast(PM.connectError(err), 'danger'); }
+    }
+  });
 
   // campos do painel (instrumento e clipe de áudio)
   R('pane').addEventListener('input', (e) => {
@@ -569,18 +616,20 @@ function session(el, ctx, p0) {
           if (out.notes.length) placeNotes(out.notes, mode, from);
         });
         toast([out.audio.length && `${out.audio.length} gravação(ões) de áudio na playlist`, out.notes.length && `${out.notes.length} nota(s)`].filter(Boolean).join(' e ') + '.', 'success');
-      } else toast('Nada foi gravado. Arme um insert no mixer (bolinha vermelha) para gravar áudio, ou toque notas no canal selecionado.');
+      } else toast('Nada foi gravado.');
       updateTransport(); pl.draw();
       return;
     }
-    const armed = p.mixer.inserts.filter((i) => i.arm);
     try {
-      for (const ins of armed) await resolveInput(ins);
-      if (armed.length && p.mode === 'pattern') { p.mode = 'song'; toast('Gravando na playlist (modo SONG).'); renderBar(); }
+      const input = await recInput();
+      const ins = input ? recInsert() : null;
+      if (input && p.mode === 'pattern') { p.mode = 'song'; renderBar(); } // áudio vai para a playlist
+      if (ins) await engine.sync(p);
+      if (input && p.rec.source === 'pocket' && p.rec.pmSlot != null) await PM.device()?.select(p.rec.pmSlot).catch(() => {});
       if (engine.playing) engine.stop(false);
-      await engine.record(p.mode === 'song' ? engine.position : 0, { countIn: p.countIn ? p.sig : 0 });
+      await engine.record(p.mode === 'song' ? engine.position : 0, { countIn: p.countIn ? p.sig : 0, sources: input ? [{ ins, input }] : [] });
       persist();
-      if (!armed.length) toast(`Gravando as notas de “${chan()?.name || '—'}”. Para gravar áudio, arme um insert no mixer.`);
+      R('srcname').textContent = srcName();
     } catch (err) { toast(err.name ? captureError(err, 'a entrada de áudio') : err.message, 'danger'); }
     updateTransport();
   }
@@ -804,19 +853,41 @@ function session(el, ctx, p0) {
     raf = requestAnimationFrame(frame);
   }
 
+  // agentes de IA (lib/agent/tools.js) mexem no projeto aberto por aqui, com desfazer
+  const unLive = setLive('daw', {
+    project: () => p,
+    async edit(fn) {
+      if (engine.recording) throw new Error('A DAW está gravando; espere a gravação terminar.');
+      const before = new Map(p.channels.map((c) => [c.id, JSON.stringify(c.synth.params)]));
+      begin();
+      try { await fn(p); } catch (e) { cancel(); throw e; }
+      for (const c of p.channels) if (before.has(c.id) && before.get(c.id) !== JSON.stringify(c.synth.params)) engine.synthOf(c.id)?.setEngine(c.synth.engine, c.synth.params);
+      paneKey = '';
+      await end();
+    },
+    async open(id) { const q = await D.loadProject(id); if (q) await openProject(q); },
+    async transport(a) {
+      if (a === 'inicio') return action('home');
+      if ((a === 'tocar') !== engine.playing) await togglePlay();
+    },
+    playing: () => engine.playing,
+  });
+
   const ready = (async () => {
     await engine.sync(p);
     hookSynths();
     refresh(); showPos();
     raf = requestAnimationFrame(frame);
     D.saveProject(p).catch(() => {});
-    for (const ins of p.mixer.inserts) if (ins.arm && ins.input.monitor) applyMonitor(ins);
+    R('srcname').textContent = srcName();
+    if (p.rec.monitor) applyMonitor();
   })();
 
   return {
     ready, engine, toggleRecord,
     destroy() {
       destroyed = true;
+      unLive();
       cancelAnimationFrame(raf);
       window.removeEventListener('keydown', onKey);
       qk.detach(); midi?.detach();

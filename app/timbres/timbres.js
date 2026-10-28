@@ -8,14 +8,10 @@ import { drawCurves } from '/lib/widgets/chart.js';
 import * as PM from '/lib/pocketmaster/session.js';
 import { LABELS, USER_PRESETS, NAME_LEN, cleanName, slotLabel } from '/lib/pocketmaster/pm.js';
 import { blockEditor, applyEdit } from '/lib/pocketmaster/editor.js';
-import { syncedStore, mergeArrays, mergeTombs } from '/lib/core/sync.js';
+import { S, db, deleteTone, getTone } from './store.js';
+import { setLive } from '/lib/agent/live.js';
 import { $, esc, toast, download, slug, confirmBox, progressHtml, setProgress, busyButton, debounce } from '/lib/core/ui.js';
 
-const S = syncedStore('timbres', 'timbres.v1', { tones: [], prefs: {}, deleted: {} }, (a, b) => {
-  const deleted = mergeTombs(a.deleted, b.deleted);
-  return { tones: mergeArrays(a.tones, b.tones, deleted, (t) => t.updatedAt || t.date || 0), prefs: { ...b.prefs, ...a.prefs }, deleted };
-});
-const db = S.data;
 
 const st = {
   map: null, audio: null, stems: null, features: null, song: null,
@@ -36,7 +32,7 @@ PM.onDevice((type) => {
 
 export default {
   title: 'Timbres',
-  async render(el) {
+  async render(el, { q = {} } = {}) {
     view = el; active = true;
     st.map ||= await PM.map();
     el.innerHTML = `
@@ -84,9 +80,13 @@ export default {
       if (e.target.id === 't-sep') { db.prefs.separate = e.target.checked; S.save(); }
       if (e.target.id === 'imp-file') importTone(e.target);
     };
-    if (st.features) renderTone();
+    const ask = q.abrir && getTone(q.abrir);
+    if (ask) openTone(ask);
+    else if (st.features) renderTone();
     renderLib();
-    return () => { active = false; st.stopPlay?.(); };
+    // agente editou o timbre que está aberto: mostra a versão nova
+    const unLive = setLive('timbres', { reload(id) { const t = getTone(id); if (t && st.toneId === id) openTone(t); } });
+    return () => { active = false; unLive(); st.stopPlay?.(); };
   },
   dirty: () => !!st.refine,
 };
@@ -473,8 +473,7 @@ function renderLib() {
     if (el.dataset.x === 'open') openTone(t);
     if (el.dataset.x === 'dl') download(`timbre-${slug(t.name)}.json`, t);
     if (el.dataset.x === 'del' && await confirmBox(`Apagar "${t.name}"?`, { ok: 'Apagar', danger: true })) {
-      db.tones = db.tones.filter((x) => x.id !== t.id);
-      db.deleted[t.id] = Date.now();
+      deleteTone(t.id);
       if (st.toneId === t.id) st.toneId = null;
       S.save(); renderLib();
     }

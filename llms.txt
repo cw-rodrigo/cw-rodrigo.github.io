@@ -1,0 +1,27 @@
+# Estúdio (cw-rodrigo.github.io)
+
+> Site em português para músicos: cifras com mudança de tom e repertórios, timbres de guitarra/baixo para a pedaleira Sonicake Pocket Master, uma DAW no estilo FL Studio e um sintetizador. Tudo roda no navegador; os dados ficam no aparelho (e sincronizam com a conta, se a pessoa entrar).
+
+## Para agentes de IA
+
+O site expõe 38 ferramentas no formato MCP (nome, descrição e JSON Schema), que agem nos dados do navegador da pessoa:
+
+- [Lista das ferramentas (JSON)](https://cw-rodrigo.github.io/mcp/tools.json)
+- [Página Agentes de IA](https://cw-rodrigo.github.io/#/agentes): como conectar
+- [Servidor MCP local, sem dependências](https://cw-rodrigo.github.io/mcp/estudio-mcp.mjs): `node estudio-mcp.mjs` (stdio). O site conecta nele por ws://127.0.0.1:8787 quando a pessoa liga a opção na página Agentes de IA.
+
+Formas de acesso:
+- WebMCP: as ferramentas são registradas com `navigator.modelContext.registerTool` (ou `document.modelContext`) quando o navegador tem a API.
+- JavaScript na página: `await estudio.tools.call('cifras_listar', {})`, `estudio.tools.list()`.
+- MCP pelo servidor local (Claude Code: `claude mcp add estudio -- node /caminho/estudio-mcp.mjs`).
+
+Grupos: site_* (estado, navegação), cifras_* e letras_buscar (cifras em ChordPro), listas_* (repertórios), timbres_* e pedaleira_* (Pocket Master), daw_* (projetos, canais, padrões, playlist), sintetizador_presets.
+Ações destrutivas (apagar, gravar na pedaleira) pedem confirmação da pessoa na página.
+
+## Seções
+
+- [Cifras](https://cw-rodrigo.github.io/#/cifras)
+- [Timbres](https://cw-rodrigo.github.io/#/timbres)
+- [DAW](https://cw-rodrigo.github.io/#/daw)
+- [Sintetizador](https://cw-rodrigo.github.io/#/sintetizador)
+- [Ferramentas](https://cw-rodrigo.github.io/#/ferramentas)
