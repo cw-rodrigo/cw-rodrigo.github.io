@@ -76,7 +76,7 @@
    * limpar os dados); na extensão, no armazenamento da extensão (o mesmo para todos os sites).
    * Interface: prefs(), setPrefs(p), add(rec), list() (mais nova primeiro), remove(ids), clear().
    */
-  const DEFAULT_PREFS = { limit: 10, quick: false, copyMode: 'auto', layout: 'vertical', transparent: false };
+  const DEFAULT_PREFS = { limit: 10, quick: false, copyMode: 'auto', layout: 'vertical', transparent: false, fmt: 'png', scale: 100, maxMB: 0, per: 'file' };
   window.__estudioIdbStore = function (dbName) {
     let dbp = null, mem = null;
     const open = () => dbp || (dbp = new Promise((ok, no) => {
@@ -132,11 +132,6 @@
   /** Nomes únicos dentro do lote. */
   const uniqueNames = (recs) => { const seen = {}; return recs.map((r) => { let n = r.name; const k = n.toLowerCase(); if (seen[k]) n = n.replace(/\.png$/i, '') + '-' + (++seen[k]) + '.png'; else seen[k] = 1; return n; }); };
   const blobToDataUrl = (b) => new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsDataURL(b); });
-  /**
-   * Copia várias capturas de uma vez. A área de transferência só aceita uma imagem por vez, então vai:
-   * como HTML com todas as imagens (Docs, Word, Gmail, Notion colam cada uma) e como uma imagem só,
-   * com todas empilhadas (para quem só aceita imagem).
-   */
   // ---------------------------------------------------------------- juntar numa imagem só
   const JOIN_GAP = 16, JOIN_MAX = 16000; // 16.000 px: limite seguro de largura/altura de imagem no navegador
   const NEAR = 0.85; // a partir de 85% do limite, avisa que está perto
@@ -177,7 +172,8 @@
     return parts;
   }
   /** Junta várias capturas numa imagem só, no arranjo escolhido, com fundo branco (ou transparente). */
-  async function joinImages(recs, { layout = 'vertical', transparent = false } = {}) {
+  async function joinImages(recs, o) { const c = await joinCanvas(recs, o); return new Promise((ok) => c.toBlob(ok, 'image/png')); }
+  async function joinCanvas(recs, { layout = 'vertical', transparent = false } = {}) {
     const bmps = await Promise.all(recs.map((r) => createImageBitmap(r.blob)));
     const p = planJoin(bmps.map((b) => ({ w: b.width, h: b.height })), layout), k = p.k;
     const c = document.createElement('canvas');
@@ -189,36 +185,8 @@
       const x = p.colW.slice(0, cc).reduce((a, v) => a + v + JOIN_GAP, 0), y = p.rowH.slice(0, rr).reduce((a, v) => a + v + JOIN_GAP, 0);
       g.drawImage(b, x * k, y * k, b.width * k, b.height * k);
     });
-    return new Promise((ok) => c.toBlob(ok, 'image/png'));
-  }
-  /**
-   * Copia várias capturas de uma vez. A área de transferência só aceita uma imagem por vez, então vai:
-   * como HTML com todas as imagens (Docs, Word, Gmail, Notion colam cada uma) e como uma imagem só,
-   * com todas empilhadas (para quem só aceita imagem).
-   */
-  /**
-   * Junta várias capturas numa imagem só. layout: 'vertical' (uma embaixo da outra), 'horizontal'
-   * (lado a lado) ou 'grade'. Fundo branco (ou transparente) entre elas; reduz se passar do limite do canvas.
-   */
-  async function joinImages(recs, { layout = 'vertical', transparent = false } = {}) {
-    const bmps = await Promise.all(recs.map((r) => createImageBitmap(r.blob)));
-    const GAP = 16, MAX = 16000;
-    const cols = layout === 'horizontal' ? bmps.length : layout === 'grade' ? Math.ceil(Math.sqrt(bmps.length)) : 1;
-    const rows = Math.ceil(bmps.length / cols);
-    const colW = [], rowH = [];
-    bmps.forEach((b, i) => { const c = i % cols, r = Math.floor(i / cols); colW[c] = Math.max(colW[c] || 0, b.width); rowH[r] = Math.max(rowH[r] || 0, b.height); });
-    const w = colW.reduce((a, b) => a + b, 0) + GAP * (cols - 1), h = rowH.reduce((a, b) => a + b, 0) + GAP * (rows - 1);
-    const k = Math.min(1, MAX / w, MAX / h);
-    const c = document.createElement('canvas');
-    c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
-    const g = c.getContext('2d');
-    if (!transparent) { g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); }
-    bmps.forEach((b, i) => {
-      const cc = i % cols, rr = Math.floor(i / cols);
-      const x = colW.slice(0, cc).reduce((a, v) => a + v + GAP, 0), y = rowH.slice(0, rr).reduce((a, v) => a + v + GAP, 0);
-      g.drawImage(b, x * k, y * k, b.width * k, b.height * k);
-    });
-    return new Promise((ok) => c.toBlob(ok, 'image/png'));
+    c.transparent = transparent;
+    return c;
   }
   /**
    * Copia várias capturas de uma vez. A área de transferência só aceita uma imagem por vez, então:
@@ -237,6 +205,61 @@
     try { await navigator.clipboard.write([new ClipboardItem({ 'text/html': await html(), 'image/png': joined })]); return 'lote'; }
     catch (e) { await navigator.clipboard.write([new ClipboardItem({ 'image/png': joined })]); return 'juntas'; }
   }
+
+  // ---------------------------------------------------------------- saída: formato, escala e limite de tamanho
+  const TYPES = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp' }, EXTS = { png: 'png', jpeg: 'jpg', webp: 'webp' };
+  const MB = 1024 * 1024;
+  const fmtMB = (n) => (n < MB / 10 ? (n / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' KB' : (n / MB).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' MB');
+  function encodeAt(src, sc, type, q, transparent) {
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(src.width * sc)); c.height = Math.max(1, Math.round(src.height * sc));
+    const g = c.getContext('2d');
+    if (type === 'image/jpeg' || !transparent) { g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); } // JPEG não tem transparência
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    g.drawImage(src, 0, 0, c.width, c.height);
+    return new Promise((ok) => c.toBlob(ok, type, q));
+  }
+  /**
+   * Gera os arquivos finais com a menor perda possível que caiba no limite.
+   * o: { fmt: 'png'|'jpeg'|'webp', scale (0..1, redução manual), maxBytes (0 = sem limite), per: 'file'|'total', transparent }
+   * JPEG/WebP: tenta qualidade 92%, 85% e 75% antes de reduzir as dimensões; PNG (sem perda) só reduz as dimensões.
+   * Devolve { items: [{ blob, scale, q }], total }.
+   */
+  async function fitOutputs(srcs, o, onStep) {
+    const type = TYPES[o.fmt] || 'image/png', max = o.maxBytes || 0, s0 = Math.max(0.01, Math.min(1, o.scale || 1));
+    if (max && o.per !== 'total' && srcs.length > 1) { // cada arquivo no limite, cada um com a sua redução
+      const items = [];
+      for (let i = 0; i < srcs.length; i++) { onStep && onStep('Ajustando ' + (i + 1) + ' de ' + srcs.length + '…'); items.push((await fitOutputs([srcs[i]], { ...o, per: 'total' })).items[0]); }
+      return { items, total: items.reduce((n, x) => n + x.blob.size, 0) };
+    }
+    const qs = type === 'image/png' ? [undefined] : [0.92, 0.85, 0.75];
+    const sum = (bl) => bl.reduce((n, b) => n + b.size, 0);
+    const encAll = (sc, q) => Promise.all(srcs.map((x) => encodeAt(x, sc, type, q, o.transparent)));
+    const pack = (bl, sc, q) => ({ items: bl.map((b) => ({ blob: b, scale: sc, q })), total: sum(bl) });
+    let last = null;
+    for (const q of qs) { const bl = await encAll(s0, q); last = bl; if (!max || sum(bl) <= max) return pack(bl, s0, q); }
+    const q = qs[qs.length - 1];
+    const MIN = 0.05; // abaixo de 5% do tamanho não vale a pena: avisa em vez de entregar uma miniatura
+    let lo = MIN, hi = s0, best = null;
+    const guess = s0 * Math.sqrt(max / sum(last)) * 0.97; // o tamanho cai mais ou menos com a área
+    for (let i = 0; i < 9 && hi - lo > 0.005; i++) {
+      const sc = i === 0 ? Math.max(MIN, Math.min(guess, hi * 0.995)) : (lo + hi) / 2;
+      onStep && onStep('Reduzindo para caber em ' + fmtMB(max) + '… (' + Math.round(sc * 100) + '%)');
+      const bl = await encAll(sc, q);
+      if (sum(bl) <= max) { best = pack(bl, sc, q); lo = sc; if (sum(bl) >= max * 0.96) break; } else hi = sc;
+    }
+    if (!best) { const bl = await encAll(MIN, q); if (sum(bl) <= max) best = pack(bl, MIN, q); }
+    if (!best) throw new Error('não coube em ' + fmtMB(max) + ' nem reduzindo para 5% do tamanho. Aumente o limite' + (type === 'image/png' ? ' ou use JPEG/WebP (bem menores).' : '.'));
+    return best;
+  }
+  /** Resumo do que saiu: tamanho, redução e qualidade. */
+  function outSummary(res, o) {
+    const scs = res.items.map((x) => x.scale), lo = Math.min(...scs), hi = Math.max(...scs);
+    const red = hi >= 0.995 ? 'tamanho original' : 'reduzida para ' + (Math.round(lo * 100) === Math.round(hi * 100) ? Math.round(hi * 100) + '%' : Math.round(lo * 100) + '–' + Math.round(hi * 100) + '%');
+    const q = res.items[0].q;
+    return fmtMB(res.total) + ' · ' + red + ' · ' + (o.fmt === 'png' ? 'PNG' : (o.fmt === 'jpeg' ? 'JPEG' : 'WebP') + (q ? ' qualidade ' + Math.round(q * 100) + '%' : ''));
+  }
+  const withExt = (name, fmt) => name.replace(/\.(png|jpe?g|webp)$/i, '') + '.' + EXTS[fmt || 'png'];
 
   const slug = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'elemento';
 
@@ -387,6 +410,7 @@
       const where = mk('div', { color: '#9aa0a6', fontSize: '12px' }, opts.mode === 'extensão' ? 'Guardadas na extensão (de todos os sites).' : 'Guardadas neste navegador, para este site (' + location.hostname + ').');
       const grid = mk('div', { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '10px', overflow: 'auto', minHeight: '120px', paddingRight: '4px' });
       const msg = mk('div', { color: '#9aa0a6', fontSize: '12px', minHeight: '16px' });
+      msg.dataset.role = 'mensagem';
       const actions = mk('div', { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' });
       const allBtn = btn('Marcar todas'), noneBtn = btn('Desmarcar todas');
       const dlBtn = btn('Baixar', true), zipBtn = btn('Baixar .zip'), oneBtn = btn('Baixar numa imagem só'), cpBtn = btn('Copiar'), delBtn = btn('Apagar');
@@ -405,6 +429,27 @@
       const trIn = mk('input'); trIn.type = 'checkbox'; trIn.checked = !!prefs.transparent; trIn.dataset.role = 'transparente';
       trLabel.append(trIn, mk('span', null, 'fundo transparente'));
       optRow.append(trLabel);
+      // saída: formato, redução manual e limite de tamanho (para caber no limite do destino)
+      const outRow = mk('div', { display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', color: '#c3c7cd', fontSize: '12px' });
+      const fmtSel = mkSel('Formato:', 'formato', [['png', 'PNG (sem perda)'], ['jpeg', 'JPEG (bem menor)'], ['webp', 'WebP (menor ainda)']], prefs.fmt || 'png');
+      const numIn = (role, v, min, max, step, width) => { const i = mk('input', { ...selCss, width }); i.type = 'number'; i.min = min; i.max = max; i.step = step; i.value = v; i.dataset.role = role; return i; };
+      const scaleIn = numIn('escala', prefs.scale || 100, '5', '100', '5', '56px');
+      const scLabel = mk('label', { display: 'flex', alignItems: 'center', gap: '5px' }, 'Tamanho:'); scLabel.append(scaleIn, mk('span', null, '%'));
+      const mbIn = numIn('limite-mb', prefs.maxMB || '', '0', '1000', '0.1', '64px'); mbIn.placeholder = 'sem';
+      const mbLabel = mk('label', { display: 'flex', alignItems: 'center', gap: '5px' }, 'No máximo:'); mbLabel.append(mbIn, mk('span', null, 'MB'));
+      const perSel = mk('select', selCss); perSel.dataset.role = 'por';
+      [['file', 'por arquivo'], ['total', 'no total']].forEach(([v, t]) => { const op = mk('option', null, t); op.value = v; perSel.append(op); });
+      perSel.value = prefs.per || 'file'; mbLabel.append(perSel);
+      // os selects de mkSel entram em optRow: move o de formato para a linha de saída
+      outRow.append(fmtSel.parentNode, scLabel, mbLabel);
+      const outHint = mk('span', { color: '#9aa0a6' }, '');
+      outRow.append(outHint);
+      const outOpts = () => ({ fmt: fmtSel.value, scale: Math.max(5, Math.min(100, Number(scaleIn.value) || 100)) / 100, maxBytes: Number(mbIn.value) > 0 ? Number(mbIn.value) * MB : 0, per: perSel.value, transparent: trIn.checked });
+      const plainOut = () => { const o = outOpts(); return o.fmt === 'png' && o.scale >= 1 && !o.maxBytes; };
+      const saveOut = async () => { prefs = await store.setPrefs({ fmt: fmtSel.value, scale: Number(scaleIn.value) || 100, maxMB: Number(mbIn.value) || 0, per: perSel.value }); updateOutHint(); };
+      const updateOutHint = () => { outHint.textContent = plainOut() ? 'arquivos originais, sem nenhuma perda' : 'a cópia para a área de transferência sai sempre em PNG (é o que o navegador permite); o limite ajusta o tamanho'; };
+      [fmtSel, scaleIn, mbIn, perSel].forEach((x) => x.addEventListener('change', saveOut));
+      updateOutHint();
       const joinOpts = () => ({ mode: modeSel.value, layout: laySel.value, transparent: trIn.checked });
       const savePrefs = async () => { prefs = await store.setPrefs({ copyMode: modeSel.value, layout: laySel.value, transparent: trIn.checked }); split = null; label(); };
       [modeSel, laySel, trIn].forEach((x) => x.addEventListener('change', savePrefs));
@@ -414,7 +459,7 @@
       // aviso de limite da imagem única, com sugestões (outro arranjo, grade, ou dividir)
       const joinInfo = mk('div', { display: 'none', gap: '8px', flexWrap: 'wrap', alignItems: 'center', fontSize: '12px', background: '#3a3220', color: '#f2d27a', border: '1px solid #6b5a2a', borderRadius: '6px', padding: '6px 10px' });
       joinInfo.dataset.role = 'limite-aviso';
-      card.append(head, where, grid, optRow, joinInfo, msg, actions);
+      card.append(head, where, grid, optRow, outRow, joinInfo, msg, actions);
       const LNAME = { vertical: 'uma embaixo da outra', horizontal: 'lado a lado', grade: 'em grade' };
       const NEXT = { vertical: ['horizontal', 'grade'], horizontal: ['vertical', 'grade'], grade: [] }; // ordem das sugestões
       let split = null; // { parts, next }: dividir em várias imagens sem redução
@@ -509,50 +554,87 @@
       }
       allBtn.addEventListener('click', () => grid.querySelectorAll('input[type=checkbox]').forEach((c) => { if (!c.checked) { c.checked = true; c.dispatchEvent(new Event('change')); } }));
       noneBtn.addEventListener('click', () => grid.querySelectorAll('input[type=checkbox]').forEach((c) => { if (c.checked) { c.checked = false; c.dispatchEvent(new Event('change')); } }));
-      dlBtn.addEventListener('click', async () => {
-        const list = chosen(), names = uniqueNames(list);
-        say('Baixando ' + list.length + '… (o navegador pode perguntar se o site pode baixar vários arquivos: permita)');
-        for (let i = 0; i < list.length; i++) { saveBlob(list[i].blob, names[i]); await new Promise((r) => setTimeout(r, 300)); }
-        say(list.length + ' baixada(s) ✓');
-      });
-      zipBtn.addEventListener('click', async () => {
-        const list = chosen(), names = uniqueNames(list);
+      const stamp = () => 'capturas-' + slug(location.hostname) + '-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+      const bitmaps = (list) => Promise.all(list.map((r) => createImageBitmap(r.blob)));
+      const busyRun = async (fn) => { [dlBtn, zipBtn, oneBtn, cpBtn].forEach((b) => { b.disabled = true; }); try { await fn(); } catch (e) { say('Não deu: ' + (e.message || e)); } finally { label(); } };
+      dlBtn.addEventListener('click', () => busyRun(async () => {
+        const list = chosen(), names = uniqueNames(list), o = outOpts();
+        let files = list.map((r, i) => ({ blob: r.blob, name: names[i] })), extra = '';
+        if (!plainOut()) {
+          const res = await fitOutputs(await bitmaps(list), o, say);
+          files = res.items.map((x, i) => ({ blob: x.blob, name: withExt(names[i], o.fmt) }));
+          extra = ' (' + outSummary(res, o) + ')';
+        }
+        say('Baixando ' + files.length + '… (o navegador pode perguntar se o site pode baixar vários arquivos: permita)');
+        for (const f of files) { saveBlob(f.blob, f.name); await new Promise((r) => setTimeout(r, 300)); }
+        say(files.length + ' baixada(s) ✓' + extra);
+      }));
+      zipBtn.addEventListener('click', () => busyRun(async () => {
+        const list = chosen(), names = uniqueNames(list), o = outOpts();
+        let files = list.map((r, i) => ({ name: names[i], blob: r.blob })), extra = '';
+        if (!plainOut()) {
+          // no .zip o limite "no total" vale para o arquivo .zip (ele não comprime: é a soma das imagens)
+          const res = await fitOutputs(await bitmaps(list), o, say);
+          files = res.items.map((x, i) => ({ name: withExt(names[i], o.fmt), blob: x.blob }));
+          extra = ' (' + outSummary(res, o) + ')';
+        }
         say('Montando o .zip…');
-        const z = await makeZip(list.map((r, i) => ({ name: names[i], blob: r.blob })));
-        saveBlob(z, 'capturas-' + slug(location.hostname) + '-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.zip');
-        say(list.length + ' captura(s) no .zip ✓');
-      });
-      oneBtn.addEventListener('click', async () => {
-        const list = ordered(), base = 'capturas-' + slug(location.hostname) + '-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+        const z = await makeZip(files);
+        saveBlob(z, stamp() + '.zip');
+        say(list.length + ' captura(s) no .zip ✓ ' + fmtMB(z.size) + extra);
+      }));
+      oneBtn.addEventListener('click', () => busyRun(async () => {
+        const list = ordered(), o = outOpts();
         const parts = split ? split.parts : [list];
         say('Juntando ' + list.length + ' capturas…');
-        for (let i = 0; i < parts.length; i++) {
-          saveBlob(await joinImages(parts[i], joinOpts()), base + (parts.length > 1 ? '-parte-' + (i + 1) : '') + '.png');
-          if (parts.length > 1) await new Promise((r) => setTimeout(r, 300));
+        const canvases = [];
+        for (const pt of parts) canvases.push(await joinCanvas(pt, joinOpts()));
+        let blobs, extra = '';
+        if (plainOut()) blobs = await Promise.all(canvases.map((c) => new Promise((ok) => c.toBlob(ok, 'image/png'))));
+        else { const res = await fitOutputs(canvases, o, say); blobs = res.items.map((x) => x.blob); extra = ' · ' + outSummary(res, o); }
+        for (let i = 0; i < blobs.length; i++) {
+          saveBlob(blobs[i], stamp() + (blobs.length > 1 ? '-parte-' + (i + 1) : '') + '.' + EXTS[plainOut() ? 'png' : o.fmt]);
+          if (blobs.length > 1) await new Promise((r) => setTimeout(r, 300));
         }
         const k = planJoin(sizesOf(list), laySel.value).k;
-        say(parts.length > 1 ? list.length + ' capturas em ' + parts.length + ' imagens, sem redução ✓' : list.length + ' capturas numa imagem só ✓' + (k < 1 ? ' (reduzida para ' + pct(k) + ')' : ''));
-      });
-      cpBtn.addEventListener('click', async () => {
-        const list = chosen();
+        say((parts.length > 1 ? list.length + ' capturas em ' + parts.length + ' imagens ✓' : list.length + ' capturas numa imagem só ✓' + (k < 1 ? ' (limite de 16.000 px: reduzida para ' + pct(k) + ')' : '')) + extra);
+      }));
+      /** Copia (sempre PNG para imagens; no HTML das separadas vale o formato escolhido). */
+      const fitPng = async (src) => { const o = { ...outOpts(), fmt: 'png', per: 'total' }; const res = await fitOutputs([src], o, say); return { blob: res.items[0].blob, sum: outSummary(res, o) }; };
+      cpBtn.addEventListener('click', () => busyRun(async () => {
+        const list = chosen(), o = outOpts(), plain = plainOut();
         if (split && modeSel.value !== 'separadas' && list.length > 1) {
           const i = split.next, part = split.parts[i];
-          try {
-            await navigator.clipboard.write([new ClipboardItem({ 'image/png': await joinImages(part, joinOpts()) })]);
-            split.next = (i + 1) % split.parts.length;
-            say('Parte ' + (i + 1) + ' de ' + split.parts.length + ' copiada (' + part.length + ' capturas) ✓' + (i + 1 < split.parts.length ? ' Cole e depois clique de novo para a próxima.' : ' Era a última.'));
-            label();
-          } catch (e) { say('Não deu para copiar: ' + (e.message || e)); }
+          const c = await joinCanvas(part, joinOpts());
+          const out = plain ? { blob: await new Promise((ok) => c.toBlob(ok, 'image/png')), sum: '' } : await fitPng(c);
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': out.blob })]);
+          split.next = (i + 1) % split.parts.length;
+          say('Parte ' + (i + 1) + ' de ' + split.parts.length + ' copiada (' + part.length + ' capturas) ✓' + (out.sum ? ' · ' + out.sum : '') + (i + 1 < split.parts.length ? ' Cole e depois clique de novo para a próxima.' : ' Era a última.'));
           return;
         }
-        try {
+        if (plain) {
           const how = await copyMany(list.slice().reverse(), joinOpts()); // na ordem em que foram feitas
           say(how === 'imagem' ? 'Copiada ✓' : how === 'lote' ? list.length + ' capturas copiadas ✓ (em documentos e e-mails cada uma cola separada; em editores de imagem cola uma imagem com todas juntas)'
             : how === 'separadas' ? list.length + ' capturas copiadas separadas ✓ (só cola onde aceita várias imagens, como Docs, Word e Gmail)' : list.length + ' capturas copiadas numa imagem só ✓');
           const k = planJoin(sizesOf(list), laySel.value).k;
           if (how !== 'separadas' && how !== 'imagem' && k < 1) msg.textContent += ' A imagem única foi reduzida para ' + pct(k) + '.';
-        } catch (e) { say('Não deu para copiar: ' + (e.message || e)); }
-      });
+          return;
+        }
+        // com redução/limite/formato: monta cada representação ajustada
+        const recsOrd = list.slice().reverse(), mode = list.length === 1 ? 'uma' : modeSel.value;
+        const item = {}, notes = [];
+        if (mode === 'uma') { const out = await fitPng(await createImageBitmap(recsOrd[0].blob)); item['image/png'] = out.blob; notes.push(out.sum); }
+        if (mode === 'juntas' || mode === 'auto') { const out = await fitPng(await joinCanvas(recsOrd, joinOpts())); item['image/png'] = out.blob; notes.push((mode === 'auto' ? 'imagem única: ' : '') + out.sum); }
+        if (mode === 'separadas' || mode === 'auto') {
+          const res = await fitOutputs(await bitmaps(recsOrd), { ...o, per: o.per }, say);
+          const urls = await Promise.all(res.items.map((x) => blobToDataUrl(x.blob)));
+          item['text/html'] = new Blob(['<div>' + urls.map((u) => '<p><img src="' + u + '"></p>').join('') + '</div>'], { type: 'text/html' });
+          notes.push((mode === 'auto' ? 'separadas: ' : '') + outSummary(res, o));
+        }
+        try { await navigator.clipboard.write([new ClipboardItem(item)]); }
+        catch (e) { if (!item['image/png']) throw e; await navigator.clipboard.write([new ClipboardItem({ 'image/png': item['image/png'] })]); notes.push('só a imagem única'); }
+        say((mode === 'uma' ? 'Copiada' : list.length + ' capturas copiadas' + (mode === 'juntas' ? ' numa imagem só' : mode === 'separadas' ? ' separadas' : '')) + ' ✓ · ' + notes.join(' · '));
+      }));
       delBtn.addEventListener('click', async () => { await store.remove(chosen().map((r) => r.id)); await load(); updateCount(); say('Apagadas.'); });
       back.addEventListener('click', closePanel);
       quit.addEventListener('click', () => stop());

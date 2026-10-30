@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Estúdio · Captura de elemento",
   "short_name": "Captura",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Passe o mouse para destacar um elemento da página (como o Inspecionar do DevTools) e clique para tirar um print só dele.",
   "action": { "default_title": "Capturar um elemento (Alt+Shift+S)", "default_icon": { "16": "icon16.png", "32": "icon32.png", "48": "icon48.png", "128": "icon128.png" } },
   "icons": { "16": "icon16.png", "32": "icon32.png", "48": "icon48.png", "128": "icon128.png" },
