@@ -13,6 +13,7 @@ chrome.action.onClicked.addListener(async (tab) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (msg?.type === 'estudio-store') { storeOp(msg.op, msg.args).then(reply, (e) => reply({ __error: e.message || String(e) })); return true; }
   if (msg?.type !== 'estudio-capture' || !sender.tab) return;
   capture(sender.tab, msg.rect).then(reply, (e) => reply({ error: e.message || String(e) }));
   return true; // resposta assíncrona
@@ -37,4 +38,30 @@ async function capture(tab, r) {
   } finally {
     if (attached) await chrome.debugger.detach(target).catch(() => {});
   }
+}
+
+// ---------------------------------------------------------------- histórico de capturas (de todos os sites)
+// Guardado no IndexedDB da extensão; as imagens vão e voltam como data URL nas mensagens.
+const DEFAULT_PREFS = { limit: 10, quick: false };
+let dbp = null;
+const openDb = () => dbp || (dbp = new Promise((ok, no) => {
+  const r = indexedDB.open('estudio-capturas', 1);
+  r.onupgradeneeded = () => { r.result.createObjectStore('shots', { keyPath: 'id' }); r.result.createObjectStore('meta'); };
+  r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error);
+}));
+async function run(name, mode, fn) {
+  const db = await openDb();
+  return new Promise((ok, no) => { const t = db.transaction(name, mode); const req = fn(t.objectStore(name)); t.oncomplete = () => ok(req && 'result' in req ? req.result : undefined); t.onerror = () => no(t.error); });
+}
+const prefs = async () => ({ ...DEFAULT_PREFS, ...((await run('meta', 'readonly', (st) => st.get('prefs'))) || {}) });
+const list = async () => (await run('shots', 'readonly', (st) => st.getAll())).sort((a, b) => b.at - a.at);
+async function trim(limit) { const l = await list(); const old = l.slice(limit).map((r) => r.id); if (old.length) await run('shots', 'readwrite', (st) => old.forEach((id) => st.delete(id))); return Math.min(l.length, limit); }
+async function storeOp(op, a) {
+  if (op === 'prefs') return prefs();
+  if (op === 'setPrefs') { const p = { ...(await prefs()), ...a }; await run('meta', 'readwrite', (st) => st.put(p, 'prefs')); await trim(p.limit); return p; }
+  if (op === 'list') return list();
+  if (op === 'add') { await run('shots', 'readwrite', (st) => st.put(a)); return trim((await prefs()).limit); }
+  if (op === 'remove') { await run('shots', 'readwrite', (st) => a.forEach((id) => st.delete(id))); return true; }
+  if (op === 'clear') { await run('shots', 'readwrite', (st) => st.clear()); return true; }
+  throw new Error('operação desconhecida: ' + op);
 }

@@ -1,6 +1,23 @@
 // Liga o seletor (picker.js) com a captura feita pela extensão.
 (() => {
-  const toBlob = async (dataUrl) => (await fetch(dataUrl)).blob();
+  // data URL <-> Blob sem fetch (alguns sites bloqueiam fetch de data: pelo CSP)
+  const toBlob = async (dataUrl) => {
+    const [head, b64] = dataUrl.split(',');
+    const bin = atob(b64), out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return new Blob([out], { type: (/data:([^;]+)/.exec(head) || [])[1] || 'image/png' });
+  };
+  const toDataUrl = (b) => new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsDataURL(b); });
+  const call = async (op, args) => { const r = await chrome.runtime.sendMessage({ type: 'estudio-store', op, args }); if (r && r.__error) throw new Error(r.__error); return r; };
+  // histórico guardado na extensão: o mesmo para todos os sites
+  const store = {
+    prefs: () => call('prefs'),
+    setPrefs: (p) => call('setPrefs', p),
+    async add(rec) { const { blob, ...rest } = rec; return call('add', { ...rest, data: await toDataUrl(blob) }); },
+    async list() { return Promise.all((await call('list')).map(async ({ data, ...r }) => ({ ...r, blob: await toBlob(data) }))); },
+    remove: (ids) => call('remove', ids),
+    clear: () => call('clear'),
+  };
   async function capture(el, info) {
     const p = info.padding || 0;
     const r = el.getBoundingClientRect();
@@ -17,5 +34,5 @@
     c.getContext('2d').drawImage(img, x0 * s, y0 * s, (x1 - x0) * s, (y1 - y0) * s, 0, 0, c.width, c.height);
     return { blob: await new Promise((ok) => c.toBlob(ok, 'image/png')), note: res.note };
   }
-  window.__estudioPicker({ capture, mode: 'extensão' });
+  window.__estudioPicker({ capture, store, mode: 'extensão' });
 })();
