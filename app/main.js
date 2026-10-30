@@ -25,6 +25,7 @@ const TOOLS = {
   separar: () => import('./tools/separar.js'),
   comparar: () => import('./tools/comparar.js'),
   pedaleira: () => import('./tools/pedaleira.js'),
+  captura: () => import('./tools/captura.js'),
 };
 
 export function parseHash() {

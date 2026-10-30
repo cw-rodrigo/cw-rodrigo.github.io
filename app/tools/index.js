@@ -4,6 +4,7 @@ const TOOLS = [
   ['acordes', 'bi-file-earmark-music', 'Acordes de um áudio', 'Gera um rascunho de cifra com acordes e letra (banco LRCLIB ou IA) a partir de um vídeo, arquivo ou do microfone. Dá para levar direto para o Cifras.'],
   ['separar', 'bi-layers', 'Separar faixas', 'Separa voz, bateria, baixo e harmonia com IA (HTDemucs), no seu aparelho. Ouça com mixer, solo/mudo, e baixe cada faixa em WAV.'],
   ['comparar', 'bi-graph-up', 'Comparar áudios', 'Compara dois áudios (vídeo, arquivo ou gravação): curva de frequências, distorção, compressão, reverb e andamento.'],
+  ['captura', 'bi-bounding-box-circles', 'Captura de elemento', 'Print de só uma parte de qualquer site, como o Inspecionar do DevTools: passe o mouse para destacar e clique para capturar. Favorito ou extensão para Chrome/Edge.'],
   ['#/agentes', 'bi-robot', 'Agentes de IA (MCP)', 'Deixe assistentes como Claude, ChatGPT ou Cursor gerenciarem suas cifras, repertórios, timbres e projetos da DAW pelo protocolo MCP.'],
   ['pedaleira', 'bi-usb-symbol', 'Pocket Master', 'Conecta a Sonicake Pocket Master pelo USB ou Bluetooth: troca de preset, edição de todos os blocos, salvar, importar/exportar e cópias de segurança.'],
 ];

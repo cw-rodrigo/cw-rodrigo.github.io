@@ -1,0 +1,59 @@
+// Ferramenta: captura de um elemento de qualquer site, no estilo do Inspecionar do DevTools.
+// Duas formas: um favorito (bookmarklet) que usa o compartilhamento da aba, e uma extensão para Chrome/Edge
+// que tira a foto pelo mesmo comando do DevTools (o elemento inteiro, mesmo fora da tela).
+import { $, toast } from '/lib/core/ui.js';
+
+const SRC = '/extensao/captura/picker.js';
+const ZIP = '/extensao/captura.zip';
+
+/** Código do favorito: o seletor inteiro dentro do link (sem carregar nada de fora, por causa do CSP dos sites). */
+export function bookmarkletCode(src) {
+  const body = src.replace(/\/\*\*[\s\S]*?\*\//g, '').split('\n').filter((l) => l.trim() && !/^\s*\/\//.test(l)).map((l) => l.trim()).join('\n');
+  return `(()=>{if(!window.__estudioPicker){\n${body}\n}window.__estudioPicker({capture:window.__estudioCaptureDisplay,mode:'favorito'});})();`;
+}
+
+export default {
+  title: 'Captura de elemento',
+  async render(el) {
+    el.innerHTML = `
+      <h1 class="h2 mb-1"><i class="bi bi-bounding-box-circles"></i> Captura de elemento</h1>
+      <p class="text-body-secondary">Tire um print de só uma parte de qualquer site, como no <em>Inspecionar</em> do DevTools: passe o mouse para destacar um elemento (div, imagem, tabela, botão…) e clique para capturar só ele. <kbd>↑</kbd> sobe para o elemento pai, <kbd>↓</kbd> volta, <kbd>Enter</kbd> captura, <kbd>Esc</kbd> sai. Dá para pôr uma margem em volta, baixar o PNG ou copiar.</p>
+      <div class="row g-3">
+        <div class="col-lg-6"><section class="card h-100"><div class="card-body">
+          <h2 class="h5"><i class="bi bi-bookmark-star"></i> Favorito (sem instalar nada)</h2>
+          <p class="small">Arraste o botão abaixo para a barra de favoritos. Em qualquer site, clique nele, escolha o elemento e permita o compartilhamento de <strong>“Esta aba”</strong> quando o navegador perguntar.</p>
+          <p><a class="btn btn-primary" id="cap-bm" href="#" draggable="true" title="Arraste para a barra de favoritos"><i class="bi bi-bounding-box-circles"></i> Capturar elemento</a></p>
+          <ul class="small text-body-secondary mb-3">
+            <li>Chrome e Edge no computador (usa o compartilhamento de tela do navegador; o recorte fica exato com a captura de região do Chrome).</li>
+            <li>Pega só o que está visível na tela; para elementos maiores que a tela, use a extensão.</li>
+            <li>Não aparece a barra de favoritos? <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>.</li>
+          </ul>
+          <button class="btn btn-sm btn-outline-secondary" type="button" id="cap-try"><i class="bi bi-cursor"></i> Experimentar nesta página</button>
+          <button class="btn btn-sm btn-outline-secondary" type="button" id="cap-copy"><i class="bi bi-clipboard"></i> Copiar o código do favorito</button>
+        </div></section></div>
+        <div class="col-lg-6"><section class="card h-100"><div class="card-body">
+          <h2 class="h5"><i class="bi bi-puzzle"></i> Extensão para Chrome e Edge (melhor qualidade)</h2>
+          <p class="small">Captura o elemento <strong>inteiro</strong>, mesmo a parte fora da tela, na resolução da tela e sem perguntar a cada vez, usando o mesmo comando do “Capturar screenshot do nó” do DevTools.</p>
+          <ol class="small">
+            <li><a href="${ZIP}" download>Baixe a extensão (.zip)</a> e descompacte numa pasta.</li>
+            <li>Abra <code class="user-select-all">chrome://extensions</code> (ou <code class="user-select-all">edge://extensions</code>) e ligue o <strong>Modo do desenvolvedor</strong>.</li>
+            <li>Clique em <strong>Carregar sem compactação</strong> e escolha a pasta.</li>
+            <li>Em qualquer site, clique no ícone da extensão (fixe ele na barra) ou aperte <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>.</li>
+          </ol>
+          <p class="small text-body-secondary mb-0">Durante a foto o navegador mostra por um instante o aviso “começou a depurar este navegador”: é o comando de captura do DevTools, e ele é desligado logo em seguida. A extensão não lê nem envia nada dos sites; o código está em <a href="https://github.com/cw-rodrigo/cw-rodrigo.github.io/tree/main/extensao/captura" target="_blank" rel="noopener">extensao/captura</a>.</p>
+        </div></section></div>
+      </div>`;
+    let code = '', src = '';
+    try { src = await (await fetch(SRC)).text(); code = bookmarkletCode(src); } catch { toast('Não consegui carregar o código do favorito. Verifique a conexão.', 'danger'); }
+    const bm = $('#cap-bm');
+    if (code) bm.href = 'javascript:' + encodeURIComponent(code);
+    bm.onclick = (e) => { e.preventDefault(); toast('Arraste este botão para a barra de favoritos. Para testar aqui, use “Experimentar nesta página”.'); };
+    $('#cap-try').onclick = () => {
+      if (!window.__estudioPicker) { const s = document.createElement('script'); s.textContent = src; document.head.append(s); }
+      window.__estudioPicker?.({ capture: window.__estudioCaptureDisplay, mode: 'favorito' });
+    };
+    $('#cap-copy').onclick = async () => {
+      try { await navigator.clipboard.writeText('javascript:' + encodeURIComponent(code)); toast('Código copiado: crie um favorito e cole no endereço (URL).', 'success'); } catch { toast('Não consegui copiar.', 'danger'); }
+    };
+  },
+};
