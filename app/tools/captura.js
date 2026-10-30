@@ -27,6 +27,7 @@ export default {
           <p class="small"><strong>Capturas guardadas:</strong> as últimas capturas (10, ou o número que você escolher) ficam guardadas. Marque <em>Só guardar</em> na barra para ir capturando vários elementos em sequência e, no fim, abra <em>Capturas</em> para escolher quais baixar (soltas ou num .zip), copiar para a área de transferência ou apagar. Todas vêm marcadas: se não desmarcar nenhuma, vão todas. No favorito, elas ficam guardadas por site; na extensão, juntas, de todos os sites.</p>
           <ul class="small text-body-secondary mb-3">
             <li>Chrome e Edge: escolha compartilhar <strong>“Esta aba”</strong>. Firefox (que não compartilha só a aba): escolha a <strong>janela do Firefox</strong> ou a tela; a página é localizada na imagem por dois quadradinhos que piscam nos cantos por um instante.</li>
+            <li>O navegador pergunta se pode compartilhar na primeira captura; depois o compartilhamento fica ligado (aparece “● compartilhando” na barra) e as próximas capturas não perguntam até você clicar em <em>Sair</em>. Os navegadores não deixam guardar essa permissão de uma vez para sempre; a extensão não pergunta nunca.</li>
             <li>Pega só o que está visível na tela; para elementos maiores que a tela, use a extensão.</li>
             <li>Não aparece a barra de favoritos? <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>.</li>
           </ul>

@@ -159,6 +159,7 @@
   window.__estudioPicker = function start(opts) {
     if (window.__estudioPickerActive) { window.__estudioPickerActive.stop(); if (!opts.target) return; }
     let target = opts.target || null, stopped = false;
+    if (window.__estudioKeepDisplay) window.__estudioKeepDisplay();
     const host = mk('div', { all: 'initial', position: 'fixed', inset: '0', zIndex: Z, pointerEvents: 'none' });
     const root = host.attachShadow ? host.attachShadow({ mode: 'closed' }) : host;
     const box = mk('div', { position: 'fixed', boxSizing: 'border-box', border: '2px solid #3b7cf0', background: 'rgba(59,124,240,.18)', borderRadius: '2px', pointerEvents: 'none', display: 'none', transition: 'all 40ms linear' });
@@ -176,7 +177,11 @@
     const quickIn = mk('input'); quickIn.type = 'checkbox';
     quickLabel.append(quickIn, mk('span', null, 'Só guardar'));
     quickLabel.title = 'Captura em sequência: cada clique só guarda nas Capturas, sem abrir a prévia. No fim, abra Capturas para baixar ou copiar.';
-    bar.append(hint, padLabel, quickLabel, galBtn, close);
+    const shareTag = mk('span', { color: '#ff7b72', display: 'none', whiteSpace: 'nowrap' }, '● compartilhando');
+    shareTag.title = 'O compartilhamento de tela fica ligado enquanto o seletor está aberto, para não perguntar a cada captura. "Sair" encerra.';
+    bar.append(hint, padLabel, quickLabel, galBtn, shareTag, close);
+    const sharing = () => !!(window.__estudioDisplayActive && window.__estudioDisplayActive());
+    const shareTimer = setInterval(() => { shareTag.style.display = sharing() ? '' : 'none'; }, 1000);
     root.append(box, pad, tag, bar);
     document.documentElement.append(host);
 
@@ -247,6 +252,7 @@
     async function shoot(el, auto) {
       busy = true;
       const p = padding();
+      const wasSharing = sharing();
       host.style.display = 'none';
       await frames(2);
       let blob = null, note = '';
@@ -259,6 +265,8 @@
       }
       host.style.display = '';
       busy = false;
+      shareTag.style.display = sharing() ? '' : 'none';
+      const firstShare = !wasSharing && sharing();
       let kept = 0;
       if (blob) {
         try {
@@ -267,11 +275,12 @@
           updateCount();
         } catch (e) { /* sem histórico: segue só com esta captura */ }
       }
-      if (blob && !auto && quickIn.checked) { toast('Guardada nas Capturas (' + kept + ' de ' + prefs.limit + ') ✓'); if (lastXY) pick(lastXY[0], lastXY[1]); return; }
-      if (blob && target && target.action === 'baixar' && auto) { saveBlob(blob, fileName(el)); toast('“' + target.name + '” baixado ✓'); setTimeout(stop, 1800); return; }
+      if (blob && !auto && quickIn.checked) { toast('Guardada nas Capturas (' + kept + ' de ' + prefs.limit + ') ✓' + (firstShare ? ' O compartilhamento fica ligado até você clicar em Sair: as próximas não perguntam de novo.' : ''), firstShare ? 5000 : 2500); if (lastXY) pick(lastXY[0], lastXY[1]); return; }
+      if (blob && target && target.action === 'baixar' && auto) { saveBlob(blob, fileName(el)); toast('“' + target.name + '” baixado ✓'); setTimeout(() => stop(true), 1800); return; }
       if (blob && target && target.action === 'copiar' && auto) {
-        try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); toast('“' + target.name + '” copiado ✓'); setTimeout(stop, 1800); return; } catch (e) { note = note || 'Não deu para copiar direto (o site não deixou); use os botões.'; }
+        try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); toast('“' + target.name + '” copiado ✓'); setTimeout(() => stop(true), 1800); return; } catch (e) { note = note || 'Não deu para copiar direto (o site não deixou); use os botões.'; }
       }
+      if (firstShare && !note) note = 'O compartilhamento de tela fica ligado até você clicar em Sair: as próximas capturas não perguntam de novo.';
       openPanel(blob, note, el);
     }
     /** Capturas guardadas: escolher quais e baixar (soltas ou em .zip), copiar ou apagar, uma a uma ou em lote. */
@@ -482,9 +491,13 @@
       if (window.__estudioPickerActive) window.__estudioPickerActive.last = blob;
       if (opts.onCapture && blob) opts.onCapture({ blob, name, element: describe(el) });
     }
-    function stop() {
+    /** keepShare: depois de um favorito de elemento, o compartilhamento fica mais 3 minutos (clicar no
+     *  favorito de novo nesta página não pergunta outra vez); o normal é encerrar ao sair. */
+    function stop(keepShare) {
       if (stopped) return;
       stopped = true;
+      clearInterval(shareTimer);
+      if (window.__estudioReleaseDisplay) window.__estudioReleaseDisplay(keepShare === true ? 180000 : 0);
       removeEventListener('mousemove', onMove, true);
       ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'dblclick', 'contextmenu', 'auxclick'].forEach((t) => removeEventListener(t, block, opt));
       removeEventListener('click', onClick, opt);
@@ -577,106 +590,146 @@
    * a tela inteira, a página é localizada no quadro pelos quadrados que piscam nos cantos (findViewport).
    * Só pega o que está visível na tela.
    */
-  async function captureOnce(el, info, waitMs) {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('Este navegador não permite capturar a tela. Use o Chrome, o Edge ou o Firefox no computador, ou a extensão.');
-    el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    const p = info.padding || 0;
+  // ---------------------------------------------------------------- captura pelo compartilhamento de tela
+  // O navegador não deixa guardar a permissão de compartilhar a tela (ele pergunta a cada pedido, por
+  // segurança). Então o compartilhamento aberto na primeira captura fica ligado enquanto o seletor está
+  // aberto: as próximas capturas usam o mesmo, sem perguntar. "Sair" (ou fechar a página) encerra.
+  let session = null; // { stream, track, video, ic, surface, useVideo }
+  const timeout = (pr, ms, msg) => Promise.race([pr, new Promise((_, no) => setTimeout(() => no(new Error(msg)), ms))]);
+  const toCanvas = (src, w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d', { willReadFrequently: true }).drawImage(src, 0, 0); return c; };
+  /** A captura só manda quadro novo quando algo muda na tela: um ponto quase invisível pisca no canto. */
+  function startNudge() {
+    const n = document.createElement('div');
+    css(n, { position: 'fixed', right: '0', bottom: '0', width: '1px', height: '1px', zIndex: Z, pointerEvents: 'none', background: 'rgba(0,0,0,0.01)' });
+    document.documentElement.append(n);
+    let k = 0, alive = true;
+    const blink = () => { if (!alive) return; n.style.background = (k++ & 1) ? 'rgba(0,0,0,0.01)' : 'rgba(0,0,0,0.03)'; requestAnimationFrame(blink); };
+    requestAnimationFrame(blink);
+    return () => { alive = false; n.remove(); };
+  }
+  function closeSession() {
+    if (!session) return;
+    const s = session;
+    session = null;
+    s.stream.getTracks().forEach((t) => t.stop());
+    s.video.srcObject = null;
+  }
+  let releaseTimer = 0;
+  window.__estudioReleaseDisplay = (laterMs) => {
+    clearTimeout(releaseTimer);
+    if (laterMs) releaseTimer = setTimeout(closeSession, laterMs); else closeSession();
+  };
+  window.__estudioKeepDisplay = () => clearTimeout(releaseTimer);
+  window.__estudioDisplayActive = () => !!(session && session.track.readyState === 'live');
+  addEventListener('pagehide', closeSession);
+
+  async function openSession(waitMs) {
     const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: 'browser', frameRate: 30 }, audio: false, preferCurrentTab: true, selfBrowserSurface: 'include', surfaceSwitching: 'exclude', monitorTypeSurfaces: 'exclude' });
     const track = stream.getVideoTracks()[0];
-    const extra = [];
+    const video = document.createElement('video');
+    video.muted = true; video.playsInline = true; video.srcObject = stream;
+    // quadros: pelo ImageCapture quando existe (Chrome/Edge: direto da trilha; o <video> fora da página
+    // às vezes não começa a tocar), senão pelo <video> (Firefox)
+    const ic = typeof window.ImageCapture === 'function' ? new window.ImageCapture(track) : null;
+    const s = { stream, track, video, ic, surface: (track.getSettings && track.getSettings().displaySurface) || '', useVideo: !ic };
+    track.addEventListener('ended', () => { if (session === s) session = null; }); // "Parar de compartilhar" do navegador
+    const stopNudge = startNudge();
     try {
-      const surface = (track.getSettings && track.getSettings().displaySurface) || '';
-      const video = document.createElement('video');
-      video.muted = true; video.playsInline = true; video.srcObject = stream;
-      // a captura só manda quadro novo quando algo muda na tela: um ponto quase invisível
-      // (1 pixel, quase transparente) pisca no canto enquanto esperamos os quadros
-      const nudge = document.createElement('div');
-      css(nudge, { position: 'fixed', right: '0', bottom: '0', width: '1px', height: '1px', zIndex: Z, pointerEvents: 'none', background: 'rgba(0,0,0,0.002)' });
-      document.documentElement.append(nudge);
-      extra.push(nudge);
-      let k = 0, alive = true;
-      const blink = () => { if (!alive) return; nudge.style.background = (k++ & 1) ? 'rgba(0,0,0,0.01)' : 'rgba(0,0,0,0.03)'; requestAnimationFrame(blink); };
-      requestAnimationFrame(blink);
-      const nextFrame = () => new Promise((r) => { const t = setTimeout(r, 250); if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(() => { clearTimeout(t); r(); }); });
-      const settle = async (n) => { await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); for (let i = 0; i < n; i++) await nextFrame(); };
-      // quadros: pelo ImageCapture quando existe (Chrome/Edge: pega o quadro direto da trilha; o <video>
-      // fora da página às vezes não começa a tocar), senão pelo <video> (Firefox)
-      const ic = typeof window.ImageCapture === 'function' ? new window.ImageCapture(track) : null;
-      const timeout = (pr, ms, msg) => Promise.race([pr, new Promise((_, no) => setTimeout(() => no(new Error(msg)), ms))]);
-      const toCanvas = (src, w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d', { willReadFrequently: true }).drawImage(src, 0, 0); return c; };
-      let useVideo = !ic;
-      const grab = async () => {
-        if (!useVideo) {
-          try { const bmp = await timeout(ic.grabFrame(), 3000, 'sem quadro'); const c = toCanvas(bmp, bmp.width, bmp.height); bmp.close && bmp.close(); return c; } catch (e) { useVideo = true; }
-        }
-        return toCanvas(video, video.videoWidth, video.videoHeight);
-      };
-      let place = null, note = '';
-      try {
-        video.play().catch(() => {});
-        // primeiro quadro: o que chegar antes, pelo ImageCapture ou pelo <video>
-        await new Promise((ok, no) => {
-          let done = false;
-          const finish = (err) => { if (done) return; done = true; clearInterval(iv); if (err) no(err); else ok(); };
-          if (ic) ic.grabFrame().then((bmp) => { bmp.close && bmp.close(); finish(); }, () => { useVideo = true; });
-          const t0 = Date.now();
-          const iv = setInterval(() => {
-            if (video.readyState >= 2 && video.videoWidth) { if (!ic) useVideo = true; finish(); }
-            else if (Date.now() - t0 > waitMs) finish(Object.assign(new Error('a captura da tela não começou.'), { noFrames: true }));
-            else if (video.paused) video.play().catch(() => {});
-          }, 50);
-        });
-        // a barra "compartilhando…" pode mudar o tamanho da página: espera assentar
-        await new Promise((r) => setTimeout(r, 400));
-        await settle(3);
-        if (surface !== 'browser') {
-          const M = 40, cw = document.documentElement.clientWidth, ch = document.documentElement.clientHeight;
-          const sq = (pos) => { const d = document.createElement('div'); css(d, { position: 'fixed', width: M + 'px', height: M + 'px', zIndex: Z, pointerEvents: 'none', background: '#000', ...pos }); document.documentElement.append(d); extra.push(d); return d; };
-          const a = sq({ left: '0', top: '0' }), b = sq({ right: '0', bottom: '0' });
-          await settle(3);
-          await grab();
-          const f1 = await grab();
-          a.style.background = b.style.background = '#fff';
-          await settle(3);
-          await grab();
-          const f2 = await grab();
-          a.remove(); b.remove();
-          const g1 = f1.getContext('2d').getImageData(0, 0, f1.width, f1.height), g2 = f2.getContext('2d').getImageData(0, 0, f2.width, f2.height);
-          place = findViewport(g1, g2, cw, ch, M);
-          if (!place) {
-            // sem achar os quadrados: estima pela diferença entre o tamanho da janela e o da página
-            const border = Math.max(0, (outerWidth - innerWidth) / 2), s = video.videoWidth / (surface === 'monitor' ? screen.width : outerWidth);
-            place = surface === 'monitor'
-              ? { x: (screenX + border) * s, y: (screenY + outerHeight - innerHeight - border) * s, sx: s, sy: s }
-              : { x: border * s, y: (outerHeight - innerHeight - border) * s, sx: s, sy: s };
-            note = 'Não consegui localizar a página com precisão na imagem compartilhada; o recorte pode ter saído um pouco deslocado. No Chrome ou no Edge, escolha compartilhar "Esta aba".';
-          }
-          await settle(3); // quadro final, já sem os quadrados
-        }
-      } finally { alive = false; nudge.remove(); }
-      if (!place) { const s = video.videoWidth / innerWidth; place = { x: 0, y: 0, sx: s, sy: s }; }
-      await grab();
-      const frame = await grab();
-      const r = el.getBoundingClientRect();
-      const W = document.documentElement.clientWidth || innerWidth, H = document.documentElement.clientHeight || innerHeight;
-      const x0 = Math.max(0, r.left - p), y0 = Math.max(0, r.top - p), x1 = Math.min(W, r.right + p), y1 = Math.min(H, r.bottom + p);
-      if (x1 <= x0 || y1 <= y0) throw new Error('O elemento não está visível na tela.');
-      if (!note && (r.top - p < 0 || r.bottom + p > H || r.left - p < 0 || r.right + p > W)) note = 'O elemento é maior que a tela: saiu só a parte visível. A extensão captura o elemento inteiro.';
-      const c = document.createElement('canvas');
-      c.width = Math.max(1, Math.round((x1 - x0) * place.sx)); c.height = Math.max(1, Math.round((y1 - y0) * place.sy));
-      c.getContext('2d').drawImage(frame, place.x + x0 * place.sx, place.y + y0 * place.sy, (x1 - x0) * place.sx, (y1 - y0) * place.sy, 0, 0, c.width, c.height);
-      const blob = await new Promise((ok) => c.toBlob(ok, 'image/png'));
-      return { blob, note };
-    } finally {
-      extra.forEach((d) => d.remove());
+      video.play().catch(() => {});
+      // primeiro quadro: o que chegar antes, pelo ImageCapture ou pelo <video>
+      await new Promise((ok, no) => {
+        let done = false;
+        const finish = (err) => { if (done) return; done = true; clearInterval(iv); if (err) no(err); else ok(); };
+        if (ic) ic.grabFrame().then((bmp) => { bmp.close && bmp.close(); finish(); }, () => { s.useVideo = true; });
+        const t0 = Date.now();
+        const iv = setInterval(() => {
+          if (video.readyState >= 2 && video.videoWidth) finish();
+          else if (Date.now() - t0 > waitMs) finish(Object.assign(new Error('a captura da tela não começou.'), { noFrames: true }));
+          else if (video.paused) video.play().catch(() => {});
+        }, 50);
+      });
+      // a barra "compartilhando…" pode mudar o tamanho da página: espera assentar
+      await new Promise((r) => setTimeout(r, 400));
+    } catch (e) {
       stream.getTracks().forEach((t) => t.stop());
-    }
-  }
-  window.__estudioCaptureDisplay = async function (el, info) {
-    // às vezes a captura começa sem mandar quadros (logo depois de abrir a página): tenta mais uma vez
-    try { return await captureOnce(el, info, 2500); } catch (e) {
-      if (e && e.noFrames && (!navigator.userActivation || navigator.userActivation.isActive)) return captureOnce(el, info, 6000);
       throw e;
+    } finally { stopNudge(); }
+    return s;
+  }
+
+  async function captureWith(s, el, info) {
+    const p = info.padding || 0;
+    const extra = [];
+    const { video, ic } = s;
+    const nextFrame = () => new Promise((r) => { const t = setTimeout(r, 250); if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(() => { clearTimeout(t); r(); }); });
+    const settle = async (n) => { await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); for (let i = 0; i < n; i++) await nextFrame(); };
+    const grab = async () => {
+      if (!s.useVideo) {
+        try { const bmp = await timeout(ic.grabFrame(), 3000, 'sem quadro'); const c = toCanvas(bmp, bmp.width, bmp.height); bmp.close && bmp.close(); return c; } catch (e) { s.useVideo = true; }
+      }
+      if (video.paused) video.play().catch(() => {});
+      return toCanvas(video, video.videoWidth, video.videoHeight);
+    };
+    const stopNudge = startNudge();
+    let place = null, note = '';
+    try {
+      await settle(3);
+      if (s.surface !== 'browser') {
+        // janela ou tela inteira: acha a página no quadro pelos quadrados que piscam nos cantos
+        // (refeito a cada captura: a janela pode ter mudado de lugar ou de tamanho)
+        const M = 40, cw = document.documentElement.clientWidth, ch = document.documentElement.clientHeight;
+        const sq = (pos) => { const d = document.createElement('div'); css(d, { position: 'fixed', width: M + 'px', height: M + 'px', zIndex: Z, pointerEvents: 'none', background: '#000', ...pos }); document.documentElement.append(d); extra.push(d); return d; };
+        const a = sq({ left: '0', top: '0' }), b = sq({ right: '0', bottom: '0' });
+        await settle(3);
+        await grab();
+        const f1 = await grab();
+        a.style.background = b.style.background = '#fff';
+        await settle(3);
+        await grab();
+        const f2 = await grab();
+        a.remove(); b.remove();
+        const g1 = f1.getContext('2d').getImageData(0, 0, f1.width, f1.height), g2 = f2.getContext('2d').getImageData(0, 0, f2.width, f2.height);
+        place = findViewport(g1, g2, cw, ch, M);
+        if (!place) {
+          // sem achar os quadrados: estima pela diferença entre o tamanho da janela e o da página
+          const vw = f2.width, border = Math.max(0, (outerWidth - innerWidth) / 2), k = vw / (s.surface === 'monitor' ? screen.width : outerWidth);
+          place = s.surface === 'monitor'
+            ? { x: (screenX + border) * k, y: (screenY + outerHeight - innerHeight - border) * k, sx: k, sy: k }
+            : { x: border * k, y: (outerHeight - innerHeight - border) * k, sx: k, sy: k };
+          note = 'Não consegui localizar a página com precisão na imagem compartilhada; o recorte pode ter saído um pouco deslocado. No Chrome ou no Edge, escolha compartilhar "Esta aba".';
+        }
+        await settle(3); // quadro final, já sem os quadrados
+      }
+    } finally { stopNudge(); extra.forEach((d) => d.remove()); }
+    await grab();
+    const frame = await grab();
+    if (!place) { const k = frame.width / innerWidth; place = { x: 0, y: 0, sx: k, sy: k }; }
+    const r = el.getBoundingClientRect();
+    const W = document.documentElement.clientWidth || innerWidth, H = document.documentElement.clientHeight || innerHeight;
+    const x0 = Math.max(0, r.left - p), y0 = Math.max(0, r.top - p), x1 = Math.min(W, r.right + p), y1 = Math.min(H, r.bottom + p);
+    if (x1 <= x0 || y1 <= y0) throw new Error('O elemento não está visível na tela.');
+    if (!note && (r.top - p < 0 || r.bottom + p > H || r.left - p < 0 || r.right + p > W)) note = 'O elemento é maior que a tela: saiu só a parte visível. A extensão captura o elemento inteiro.';
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round((x1 - x0) * place.sx)); c.height = Math.max(1, Math.round((y1 - y0) * place.sy));
+    c.getContext('2d').drawImage(frame, place.x + x0 * place.sx, place.y + y0 * place.sy, (x1 - x0) * place.sx, (y1 - y0) * place.sy, 0, 0, c.width, c.height);
+    const blob = await new Promise((ok) => c.toBlob(ok, 'image/png'));
+    return { blob, note };
+  }
+
+  /** Captura de um elemento pelo compartilhamento de tela (favorito). info: { padding, keep } */
+  window.__estudioCaptureDisplay = async function (el, info) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('Este navegador não permite capturar a tela. Use o Chrome, o Edge ou o Firefox no computador, ou a extensão.');
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (!window.__estudioDisplayActive()) {
+      closeSession();
+      // às vezes a captura começa sem mandar quadros (logo depois de abrir a página): tenta mais uma vez
+      try { session = await openSession(2500); } catch (e) {
+        if (!(e && e.noFrames && (!navigator.userActivation || navigator.userActivation.isActive))) throw e;
+        session = await openSession(6000);
+      }
     }
+    try { return await captureWith(session, el, info); }
+    catch (e) { closeSession(); throw e; }
+    finally { if (info && info.keep === false) closeSession(); }
   };
 })();
