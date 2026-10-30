@@ -76,7 +76,7 @@
    * limpar os dados); na extensão, no armazenamento da extensão (o mesmo para todos os sites).
    * Interface: prefs(), setPrefs(p), add(rec), list() (mais nova primeiro), remove(ids), clear().
    */
-  const DEFAULT_PREFS = { limit: 10, quick: false };
+  const DEFAULT_PREFS = { limit: 10, quick: false, copyMode: 'auto', layout: 'vertical', transparent: false };
   window.__estudioIdbStore = function (dbName) {
     let dbp = null, mem = null;
     const open = () => dbp || (dbp = new Promise((ok, no) => {
@@ -137,21 +137,46 @@
    * como HTML com todas as imagens (Docs, Word, Gmail, Notion colam cada uma) e como uma imagem só,
    * com todas empilhadas (para quem só aceita imagem).
    */
-  async function copyMany(recs) {
-    if (recs.length === 1) { await navigator.clipboard.write([new ClipboardItem({ 'image/png': recs[0].blob })]); return 'imagem'; }
+  /**
+   * Junta várias capturas numa imagem só. layout: 'vertical' (uma embaixo da outra), 'horizontal'
+   * (lado a lado) ou 'grade'. Fundo branco (ou transparente) entre elas; reduz se passar do limite do canvas.
+   */
+  async function joinImages(recs, { layout = 'vertical', transparent = false } = {}) {
     const bmps = await Promise.all(recs.map((r) => createImageBitmap(r.blob)));
     const GAP = 16, MAX = 16000;
-    let w = Math.max(...bmps.map((b) => b.width)), h = bmps.reduce((n, b) => n + b.height, 0) + GAP * (bmps.length - 1);
+    const cols = layout === 'horizontal' ? bmps.length : layout === 'grade' ? Math.ceil(Math.sqrt(bmps.length)) : 1;
+    const rows = Math.ceil(bmps.length / cols);
+    const colW = [], rowH = [];
+    bmps.forEach((b, i) => { const c = i % cols, r = Math.floor(i / cols); colW[c] = Math.max(colW[c] || 0, b.width); rowH[r] = Math.max(rowH[r] || 0, b.height); });
+    const w = colW.reduce((a, b) => a + b, 0) + GAP * (cols - 1), h = rowH.reduce((a, b) => a + b, 0) + GAP * (rows - 1);
     const k = Math.min(1, MAX / w, MAX / h);
     const c = document.createElement('canvas');
     c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
     const g = c.getContext('2d');
-    let y = 0;
-    for (const b of bmps) { g.drawImage(b, 0, y, b.width * k, b.height * k); y += (b.height + GAP) * k; }
-    const stacked = await new Promise((ok) => c.toBlob(ok, 'image/png'));
-    const html = '<div>' + (await Promise.all(recs.map((r) => blobToDataUrl(r.blob)))).map((u) => '<p><img src="' + u + '"></p>').join('') + '</div>';
-    try { await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'image/png': stacked })]); return 'lote'; }
-    catch (e) { await navigator.clipboard.write([new ClipboardItem({ 'image/png': stacked })]); return 'empilhada'; }
+    if (!transparent) { g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); }
+    bmps.forEach((b, i) => {
+      const cc = i % cols, rr = Math.floor(i / cols);
+      const x = colW.slice(0, cc).reduce((a, v) => a + v + GAP, 0), y = rowH.slice(0, rr).reduce((a, v) => a + v + GAP, 0);
+      g.drawImage(b, x * k, y * k, b.width * k, b.height * k);
+    });
+    return new Promise((ok) => c.toBlob(ok, 'image/png'));
+  }
+  /**
+   * Copia várias capturas de uma vez. A área de transferência só aceita uma imagem por vez, então:
+   * mode 'auto': vai como HTML com todas as imagens (Docs, Word, Gmail, Notion colam cada uma) e também
+   *   como uma imagem só, juntas (para quem só aceita imagem) — o programa de destino escolhe;
+   * mode 'separadas': só o HTML (força imagens separadas onde o destino aceita);
+   * mode 'juntas': só a imagem única (força um arquivo só, mesmo onde o destino aceitaria separadas).
+   */
+  async function copyMany(recs, opt) {
+    const o = opt || {}, mode = o.mode || 'auto';
+    if (recs.length === 1) { await navigator.clipboard.write([new ClipboardItem({ 'image/png': recs[0].blob })]); return 'imagem'; }
+    const html = async () => new Blob(['<div>' + (await Promise.all(recs.map((r) => blobToDataUrl(r.blob)))).map((u) => '<p><img src="' + u + '"></p>').join('') + '</div>'], { type: 'text/html' });
+    if (mode === 'juntas') { await navigator.clipboard.write([new ClipboardItem({ 'image/png': await joinImages(recs, o) })]); return 'juntas'; }
+    if (mode === 'separadas') { await navigator.clipboard.write([new ClipboardItem({ 'text/html': await html() })]); return 'separadas'; }
+    const joined = await joinImages(recs, o);
+    try { await navigator.clipboard.write([new ClipboardItem({ 'text/html': await html(), 'image/png': joined })]); return 'lote'; }
+    catch (e) { await navigator.clipboard.write([new ClipboardItem({ 'image/png': joined })]); return 'juntas'; }
   }
 
   const slug = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'elemento';
@@ -305,11 +330,29 @@
       const msg = mk('div', { color: '#9aa0a6', fontSize: '12px', minHeight: '16px' });
       const actions = mk('div', { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' });
       const allBtn = btn('Marcar todas'), noneBtn = btn('Desmarcar todas');
-      const dlBtn = btn('Baixar', true), zipBtn = btn('Baixar .zip'), cpBtn = btn('Copiar'), delBtn = btn('Apagar');
+      const dlBtn = btn('Baixar', true), zipBtn = btn('Baixar .zip'), oneBtn = btn('Baixar numa imagem só'), cpBtn = btn('Copiar'), delBtn = btn('Apagar');
+      // como copiar e como juntar (lembrado entre as sessões)
+      const optRow = mk('div', { display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', color: '#c3c7cd', fontSize: '12px' });
+      const selCss = { font: FONT, fontSize: '12px', background: '#2b3038', color: '#fff', border: '1px solid #5b6370', borderRadius: '4px', padding: '2px 4px' };
+      const mkSel = (label, role, options, value) => {
+        const l = mk('label', { display: 'flex', alignItems: 'center', gap: '5px' }, label);
+        const sl = mk('select', selCss); sl.dataset.role = role;
+        options.forEach(([v, t]) => { const o = mk('option', null, t); o.value = v; sl.append(o); });
+        sl.value = value; l.append(sl); optRow.append(l); return sl;
+      };
+      const modeSel = mkSel('Copiar várias:', 'copia', [['auto', 'automático (o destino escolhe)'], ['juntas', 'sempre numa imagem só'], ['separadas', 'sempre separadas']], prefs.copyMode || 'auto');
+      const laySel = mkSel('Juntar:', 'layout', [['vertical', 'uma embaixo da outra'], ['horizontal', 'lado a lado'], ['grade', 'em grade']], prefs.layout || 'vertical');
+      const trLabel = mk('label', { display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' });
+      const trIn = mk('input'); trIn.type = 'checkbox'; trIn.checked = !!prefs.transparent; trIn.dataset.role = 'transparente';
+      trLabel.append(trIn, mk('span', null, 'fundo transparente'));
+      optRow.append(trLabel);
+      const joinOpts = () => ({ mode: modeSel.value, layout: laySel.value, transparent: trIn.checked });
+      const savePrefs = async () => { prefs = await store.setPrefs({ copyMode: modeSel.value, layout: laySel.value, transparent: trIn.checked }); label(); };
+      [modeSel, laySel, trIn].forEach((x) => x.addEventListener('change', savePrefs));
       const back = btn('Voltar a capturar'), quit = btn('Sair');
       const spacer = mk('span', { flex: '1' });
-      actions.append(allBtn, noneBtn, spacer, dlBtn, zipBtn, cpBtn, delBtn, back, quit);
-      card.append(head, where, grid, msg, actions);
+      actions.append(allBtn, noneBtn, spacer, dlBtn, zipBtn, oneBtn, cpBtn, delBtn, back, quit);
+      card.append(head, where, grid, optRow, msg, actions);
 
       let recs = [];
       const sel = new Set();
@@ -319,9 +362,10 @@
         title.textContent = 'Capturas (' + recs.length + ' de ' + prefs.limit + ')';
         dlBtn.textContent = 'Baixar ' + (n === recs.length ? 'todas' : 'selecionadas') + ' (' + n + ')';
         zipBtn.textContent = 'Baixar .zip (' + n + ')';
-        cpBtn.textContent = 'Copiar ' + (n === 1 ? 'a imagem' : n === recs.length ? 'todas' : 'selecionadas') + ' (' + n + ')';
+        cpBtn.textContent = 'Copiar ' + (n === 1 ? 'a imagem' : (n === recs.length ? 'todas' : 'selecionadas') + (modeSel.value === 'juntas' ? ' numa imagem' : modeSel.value === 'separadas' ? ' separadas' : '')) + ' (' + n + ')';
+        oneBtn.textContent = 'Baixar numa imagem só (' + n + ')';
         delBtn.textContent = 'Apagar (' + n + ')';
-        [dlBtn, zipBtn, cpBtn, delBtn].forEach((b) => { b.disabled = !n; b.style.opacity = n ? '1' : '.45'; });
+        [dlBtn, zipBtn, oneBtn, cpBtn, delBtn].forEach((b) => { b.disabled = !n; b.style.opacity = n ? '1' : '.45'; });
       };
       const say = (t) => { msg.textContent = t; };
       async function load() {
@@ -370,11 +414,19 @@
         saveBlob(z, 'capturas-' + slug(location.hostname) + '-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.zip');
         say(list.length + ' captura(s) no .zip ✓');
       });
+      oneBtn.addEventListener('click', async () => {
+        const list = chosen();
+        say('Juntando ' + list.length + ' capturas…');
+        const b = await joinImages(list.slice().reverse(), joinOpts()); // na ordem em que foram feitas
+        saveBlob(b, 'capturas-' + slug(location.hostname) + '-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.png');
+        say(list.length + ' capturas numa imagem só ✓');
+      });
       cpBtn.addEventListener('click', async () => {
         const list = chosen();
         try {
-          const how = await copyMany(list);
-          say(how === 'imagem' ? 'Copiada ✓' : how === 'lote' ? list.length + ' capturas copiadas ✓ (em documentos e e-mails cada uma cola separada; em editores de imagem cola uma imagem com todas empilhadas)' : list.length + ' capturas copiadas numa imagem só, empilhadas ✓');
+          const how = await copyMany(list.slice().reverse(), joinOpts()); // na ordem em que foram feitas
+          say(how === 'imagem' ? 'Copiada ✓' : how === 'lote' ? list.length + ' capturas copiadas ✓ (em documentos e e-mails cada uma cola separada; em editores de imagem cola uma imagem com todas juntas)'
+            : how === 'separadas' ? list.length + ' capturas copiadas separadas ✓ (só cola onde aceita várias imagens, como Docs, Word e Gmail)' : list.length + ' capturas copiadas numa imagem só ✓');
         } catch (e) { say('Não deu para copiar: ' + (e.message || e)); }
       });
       delBtn.addEventListener('click', async () => { await store.remove(chosen().map((r) => r.id)); await load(); updateCount(); say('Apagadas.'); });

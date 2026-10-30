@@ -42,7 +42,7 @@ async function capture(tab, r) {
 
 // ---------------------------------------------------------------- histórico de capturas (de todos os sites)
 // Guardado no IndexedDB da extensão; as imagens vão e voltam como data URL nas mensagens.
-const DEFAULT_PREFS = { limit: 10, quick: false };
+const DEFAULT_PREFS = { limit: 10, quick: false, copyMode: 'auto', layout: 'vertical', transparent: false };
 let dbp = null;
 const openDb = () => dbp || (dbp = new Promise((ok, no) => {
   const r = indexedDB.open('estudio-capturas', 1);
