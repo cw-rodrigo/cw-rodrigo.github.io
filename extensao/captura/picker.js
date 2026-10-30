@@ -137,6 +137,65 @@
    * como HTML com todas as imagens (Docs, Word, Gmail, Notion colam cada uma) e como uma imagem só,
    * com todas empilhadas (para quem só aceita imagem).
    */
+  // ---------------------------------------------------------------- juntar numa imagem só
+  const JOIN_GAP = 16, JOIN_MAX = 16000; // 16.000 px: limite seguro de largura/altura de imagem no navegador
+  const NEAR = 0.85; // a partir de 85% do limite, avisa que está perto
+  /** Arranjo com `cols` colunas: tamanho total e a escala para caber no limite (1 = sem redução). */
+  function planCols(sizes, cols) {
+    const colW = [], rowH = [];
+    sizes.forEach((z, i) => { const c = i % cols, r = Math.floor(i / cols); colW[c] = Math.max(colW[c] || 0, z.w); rowH[r] = Math.max(rowH[r] || 0, z.h); });
+    const w = colW.reduce((a, b) => a + b, 0) + JOIN_GAP * (colW.length - 1), h = rowH.reduce((a, b) => a + b, 0) + JOIN_GAP * (rowH.length - 1);
+    return { cols, colW, rowH, w, h, k: Math.min(1, JOIN_MAX / w, JOIN_MAX / h) };
+  }
+  /**
+   * Plano para o arranjo escolhido. A grade testa todas as quantidades de colunas e fica com a que
+   * mantém mais qualidade (maior escala; empatando, a mais "quadrada") — por isso é a que mais demora a
+   * chegar no limite com muitas capturas.
+   */
+  function planJoin(sizes, layout) {
+    if (!sizes.length) return planCols([{ w: 1, h: 1 }], 1);
+    if (layout === 'horizontal') return planCols(sizes, sizes.length);
+    if (layout !== 'grade') return planCols(sizes, 1);
+    let best = null;
+    for (let c = 1; c <= sizes.length; c++) {
+      const p = planCols(sizes, c);
+      const score = p.k * 1e6 - Math.max(p.w, p.h);
+      if (!best || score > best.score) best = { ...p, score };
+    }
+    return best;
+  }
+  const sizesOf = (recs) => recs.map((r) => ({ w: r.width || 1, h: r.height || 1 }));
+  /** Divide em partes seguidas que cabem sem redução no arranjo escolhido. */
+  function splitForLimit(recs, layout) {
+    const parts = [];
+    let cur = [];
+    for (const r of recs) {
+      if (cur.length && planJoin(sizesOf([...cur, r]), layout).k < 1) { parts.push(cur); cur = []; }
+      cur.push(r);
+    }
+    if (cur.length) parts.push(cur);
+    return parts;
+  }
+  /** Junta várias capturas numa imagem só, no arranjo escolhido, com fundo branco (ou transparente). */
+  async function joinImages(recs, { layout = 'vertical', transparent = false } = {}) {
+    const bmps = await Promise.all(recs.map((r) => createImageBitmap(r.blob)));
+    const p = planJoin(bmps.map((b) => ({ w: b.width, h: b.height })), layout), k = p.k;
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(p.w * k)); c.height = Math.max(1, Math.round(p.h * k));
+    const g = c.getContext('2d');
+    if (!transparent) { g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); }
+    bmps.forEach((b, i) => {
+      const cc = i % p.cols, rr = Math.floor(i / p.cols);
+      const x = p.colW.slice(0, cc).reduce((a, v) => a + v + JOIN_GAP, 0), y = p.rowH.slice(0, rr).reduce((a, v) => a + v + JOIN_GAP, 0);
+      g.drawImage(b, x * k, y * k, b.width * k, b.height * k);
+    });
+    return new Promise((ok) => c.toBlob(ok, 'image/png'));
+  }
+  /**
+   * Copia várias capturas de uma vez. A área de transferência só aceita uma imagem por vez, então vai:
+   * como HTML com todas as imagens (Docs, Word, Gmail, Notion colam cada uma) e como uma imagem só,
+   * com todas empilhadas (para quem só aceita imagem).
+   */
   /**
    * Junta várias capturas numa imagem só. layout: 'vertical' (uma embaixo da outra), 'horizontal'
    * (lado a lado) ou 'grade'. Fundo branco (ou transparente) entre elas; reduz se passar do limite do canvas.
@@ -341,18 +400,26 @@
         sl.value = value; l.append(sl); optRow.append(l); return sl;
       };
       const modeSel = mkSel('Copiar várias:', 'copia', [['auto', 'automático (o destino escolhe)'], ['juntas', 'sempre numa imagem só'], ['separadas', 'sempre separadas']], prefs.copyMode || 'auto');
-      const laySel = mkSel('Juntar:', 'layout', [['vertical', 'uma embaixo da outra'], ['horizontal', 'lado a lado'], ['grade', 'em grade']], prefs.layout || 'vertical');
+      const laySel = mkSel('Juntar:', 'layout', [['vertical', 'uma embaixo da outra'], ['horizontal', 'lado a lado'], ['grade', 'em grade (melhor qualidade com muitas capturas)']], prefs.layout || 'vertical');
       const trLabel = mk('label', { display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' });
       const trIn = mk('input'); trIn.type = 'checkbox'; trIn.checked = !!prefs.transparent; trIn.dataset.role = 'transparente';
       trLabel.append(trIn, mk('span', null, 'fundo transparente'));
       optRow.append(trLabel);
       const joinOpts = () => ({ mode: modeSel.value, layout: laySel.value, transparent: trIn.checked });
-      const savePrefs = async () => { prefs = await store.setPrefs({ copyMode: modeSel.value, layout: laySel.value, transparent: trIn.checked }); label(); };
+      const savePrefs = async () => { prefs = await store.setPrefs({ copyMode: modeSel.value, layout: laySel.value, transparent: trIn.checked }); split = null; label(); };
       [modeSel, laySel, trIn].forEach((x) => x.addEventListener('change', savePrefs));
       const back = btn('Voltar a capturar'), quit = btn('Sair');
       const spacer = mk('span', { flex: '1' });
       actions.append(allBtn, noneBtn, spacer, dlBtn, zipBtn, oneBtn, cpBtn, delBtn, back, quit);
-      card.append(head, where, grid, optRow, msg, actions);
+      // aviso de limite da imagem única, com sugestões (outro arranjo, grade, ou dividir)
+      const joinInfo = mk('div', { display: 'none', gap: '8px', flexWrap: 'wrap', alignItems: 'center', fontSize: '12px', background: '#3a3220', color: '#f2d27a', border: '1px solid #6b5a2a', borderRadius: '6px', padding: '6px 10px' });
+      joinInfo.dataset.role = 'limite-aviso';
+      card.append(head, where, grid, optRow, joinInfo, msg, actions);
+      const LNAME = { vertical: 'uma embaixo da outra', horizontal: 'lado a lado', grade: 'em grade' };
+      const NEXT = { vertical: ['horizontal', 'grade'], horizontal: ['vertical', 'grade'], grade: [] }; // ordem das sugestões
+      let split = null; // { parts, next }: dividir em várias imagens sem redução
+      const fmt = (n) => Math.round(n).toLocaleString('pt-BR');
+      const pct = (k) => Math.floor(k * 100) + '%';
 
       let recs = [];
       const sel = new Set();
@@ -363,11 +430,52 @@
         dlBtn.textContent = 'Baixar ' + (n === recs.length ? 'todas' : 'selecionadas') + ' (' + n + ')';
         zipBtn.textContent = 'Baixar .zip (' + n + ')';
         cpBtn.textContent = 'Copiar ' + (n === 1 ? 'a imagem' : (n === recs.length ? 'todas' : 'selecionadas') + (modeSel.value === 'juntas' ? ' numa imagem' : modeSel.value === 'separadas' ? ' separadas' : '')) + ' (' + n + ')';
-        oneBtn.textContent = 'Baixar numa imagem só (' + n + ')';
+        oneBtn.textContent = split ? 'Baixar em ' + split.parts.length + ' imagens, sem redução (' + n + ')' : 'Baixar numa imagem só (' + n + ')';
+        if (split && modeSel.value !== 'separadas' && n > 1) cpBtn.textContent = 'Copiar parte ' + (split.next + 1) + ' de ' + split.parts.length;
+        updateJoinInfo();
         delBtn.textContent = 'Apagar (' + n + ')';
         [dlBtn, zipBtn, oneBtn, cpBtn, delBtn].forEach((b) => { b.disabled = !n; b.style.opacity = n ? '1' : '.45'; });
       };
       const say = (t) => { msg.textContent = t; };
+      const ordered = () => chosen().slice().reverse(); // na ordem em que foram feitas
+      function updateJoinInfo() {
+        joinInfo.textContent = '';
+        const list = ordered();
+        if (list.length < 2) { joinInfo.style.display = 'none'; return; }
+        const lay = laySel.value, p = planJoin(sizesOf(list), lay);
+        const big = Math.max(p.w, p.h);
+        if (split) {
+          joinInfo.append(mk('span', null, 'Dividido em ' + split.parts.length + ' imagens sem redução (' + split.parts.map((x) => x.length).join(' + ') + ' capturas).'));
+          const undo = btn('Voltar a uma imagem só'); css(undo, { padding: '2px 8px', fontSize: '12px' });
+          undo.addEventListener('click', () => { split = null; label(); });
+          joinInfo.append(undo);
+          joinInfo.style.display = 'flex';
+          return;
+        }
+        if (p.k >= 1 && big <= JOIN_MAX * NEAR) { joinInfo.style.display = 'none'; return; }
+        const text = p.k < 1
+          ? 'Numa imagem só (' + LNAME[lay] + ') ficaria com ' + fmt(p.w) + ' × ' + fmt(p.h) + ' px, acima do limite de ' + fmt(JOIN_MAX) + ' px: seria reduzida para ' + pct(p.k) + ' (perde nitidez).'
+          : 'Perto do limite: ' + LNAME[lay] + ' fica com ' + fmt(p.w) + ' × ' + fmt(p.h) + ' px (máximo ' + fmt(JOIN_MAX) + '). Com mais capturas, a imagem única começa a ser reduzida.';
+        joinInfo.append(mk('span', null, text));
+        // sugere o próximo arranjo na ordem (o outro em linha, depois a grade) que tiver mais folga
+        const sug = NEXT[lay].map((l) => ({ l, q: planJoin(sizesOf(list), l) })).find((x) => x.q.k > p.k || (x.q.k >= 1 && Math.max(x.q.w, x.q.h) < big * 0.9));
+        if (sug) {
+          const b2 = btn('Usar ' + LNAME[sug.l] + (sug.q.k >= 1 ? ' (sem redução)' : ' (' + pct(sug.q.k) + ')'));
+          css(b2, { padding: '2px 8px', fontSize: '12px' });
+          b2.addEventListener('click', () => { laySel.value = sug.l; laySel.dispatchEvent(new Event('change')); });
+          joinInfo.append(b2);
+        }
+        if (p.k < 1) {
+          const parts = splitForLimit(list, lay);
+          if (parts.length > 1) {
+            const b3 = btn('Dividir em ' + parts.length + ' imagens sem redução');
+            css(b3, { padding: '2px 8px', fontSize: '12px' });
+            b3.addEventListener('click', () => { split = { parts, next: 0 }; label(); });
+            joinInfo.append(b3);
+          }
+        }
+        joinInfo.style.display = 'flex';
+      }
       async function load() {
         recs = await store.list();
         sel.clear(); recs.forEach((r) => sel.add(r.id)); // todas marcadas: quem não desmarcar, leva tudo
@@ -393,7 +501,7 @@
           b2.addEventListener('click', async () => { try { await copyMany([r]); say('Copiada ✓'); } catch (e) { say('Não deu para copiar: ' + (e.message || e)); } });
           b3.addEventListener('click', async () => { await store.remove([r.id]); await load(); updateCount(); });
           btns.append(b1, b2, b3);
-          cb.addEventListener('change', () => { if (cb.checked) sel.add(r.id); else sel.delete(r.id); item.style.borderColor = cb.checked ? '#3b7cf0' : 'transparent'; label(); });
+          cb.addEventListener('change', () => { split = null; if (cb.checked) sel.add(r.id); else sel.delete(r.id); item.style.borderColor = cb.checked ? '#3b7cf0' : 'transparent'; label(); });
           item.append(top, thumbBox, info, btns);
           grid.append(item);
         }
@@ -415,18 +523,34 @@
         say(list.length + ' captura(s) no .zip ✓');
       });
       oneBtn.addEventListener('click', async () => {
-        const list = chosen();
+        const list = ordered(), base = 'capturas-' + slug(location.hostname) + '-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+        const parts = split ? split.parts : [list];
         say('Juntando ' + list.length + ' capturas…');
-        const b = await joinImages(list.slice().reverse(), joinOpts()); // na ordem em que foram feitas
-        saveBlob(b, 'capturas-' + slug(location.hostname) + '-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.png');
-        say(list.length + ' capturas numa imagem só ✓');
+        for (let i = 0; i < parts.length; i++) {
+          saveBlob(await joinImages(parts[i], joinOpts()), base + (parts.length > 1 ? '-parte-' + (i + 1) : '') + '.png');
+          if (parts.length > 1) await new Promise((r) => setTimeout(r, 300));
+        }
+        const k = planJoin(sizesOf(list), laySel.value).k;
+        say(parts.length > 1 ? list.length + ' capturas em ' + parts.length + ' imagens, sem redução ✓' : list.length + ' capturas numa imagem só ✓' + (k < 1 ? ' (reduzida para ' + pct(k) + ')' : ''));
       });
       cpBtn.addEventListener('click', async () => {
         const list = chosen();
+        if (split && modeSel.value !== 'separadas' && list.length > 1) {
+          const i = split.next, part = split.parts[i];
+          try {
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': await joinImages(part, joinOpts()) })]);
+            split.next = (i + 1) % split.parts.length;
+            say('Parte ' + (i + 1) + ' de ' + split.parts.length + ' copiada (' + part.length + ' capturas) ✓' + (i + 1 < split.parts.length ? ' Cole e depois clique de novo para a próxima.' : ' Era a última.'));
+            label();
+          } catch (e) { say('Não deu para copiar: ' + (e.message || e)); }
+          return;
+        }
         try {
           const how = await copyMany(list.slice().reverse(), joinOpts()); // na ordem em que foram feitas
           say(how === 'imagem' ? 'Copiada ✓' : how === 'lote' ? list.length + ' capturas copiadas ✓ (em documentos e e-mails cada uma cola separada; em editores de imagem cola uma imagem com todas juntas)'
             : how === 'separadas' ? list.length + ' capturas copiadas separadas ✓ (só cola onde aceita várias imagens, como Docs, Word e Gmail)' : list.length + ' capturas copiadas numa imagem só ✓');
+          const k = planJoin(sizesOf(list), laySel.value).k;
+          if (how !== 'separadas' && how !== 'imagem' && k < 1) msg.textContent += ' A imagem única foi reduzida para ' + pct(k) + '.';
         } catch (e) { say('Não deu para copiar: ' + (e.message || e)); }
       });
       delBtn.addEventListener('click', async () => { await store.remove(chosen().map((r) => r.id)); await load(); updateCount(); say('Apagadas.'); });
