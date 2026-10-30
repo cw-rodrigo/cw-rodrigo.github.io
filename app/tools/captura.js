@@ -6,10 +6,10 @@ import { $, toast } from '/lib/core/ui.js';
 const SRC = '/extensao/captura/picker.js';
 const ZIP = '/extensao/captura.zip';
 
-/** Código do favorito: o seletor inteiro dentro do link (sem carregar nada de fora, por causa do CSP dos sites). */
-export function bookmarkletCode(src) {
-  const body = src.replace(/\/\*\*[\s\S]*?\*\//g, '').split('\n').filter((l) => l.trim() && !/^\s*\/\//.test(l)).map((l) => l.trim()).join('\n');
-  return `(()=>{if(!window.__estudioPicker){\n${body}\n}window.__estudioPicker({capture:window.__estudioCaptureDisplay,mode:'favorito'});})();`;
+/** Carrega o seletor nesta página (ele também gera o código dos favoritos). */
+function loadPicker() {
+  if (window.__estudioBookmarklet) return Promise.resolve();
+  return new Promise((ok, no) => { const s = document.createElement('script'); s.src = SRC; s.onload = ok; s.onerror = no; document.head.append(s); });
 }
 
 export default {
@@ -23,6 +23,7 @@ export default {
           <h2 class="h5"><i class="bi bi-bookmark-star"></i> Favorito (sem instalar nada)</h2>
           <p class="small">Arraste o botão abaixo para a barra de favoritos. Em qualquer site, clique nele, escolha o elemento e permita o compartilhamento de <strong>“Esta aba”</strong> quando o navegador perguntar.</p>
           <p><a class="btn btn-primary" id="cap-bm" href="#" draggable="true" title="Arraste para a barra de favoritos"><i class="bi bi-bounding-box-circles"></i> Capturar elemento</a></p>
+          <p class="small"><strong>★ Lembrar um elemento:</strong> depois de capturar, a janela da prévia oferece um botão amarelo com o nome que você quiser. Arraste ele também para a barra de favoritos: na próxima vez, um clique nele já captura aquele mesmo elemento (e pode baixar ou copiar direto), sem precisar escolher.</p>
           <ul class="small text-body-secondary mb-3">
             <li>Chrome e Edge no computador (usa o compartilhamento de tela do navegador; o recorte fica exato com a captura de região do Chrome).</li>
             <li>Pega só o que está visível na tela; para elementos maiores que a tela, use a extensão.</li>
@@ -43,17 +44,16 @@ export default {
           <p class="small text-body-secondary mb-0">Durante a foto o navegador mostra por um instante o aviso “começou a depurar este navegador”: é o comando de captura do DevTools, e ele é desligado logo em seguida. A extensão não lê nem envia nada dos sites; o código está em <a href="https://github.com/cw-rodrigo/cw-rodrigo.github.io/tree/main/extensao/captura" target="_blank" rel="noopener">extensao/captura</a>.</p>
         </div></section></div>
       </div>`;
-    let code = '', src = '';
-    try { src = await (await fetch(SRC)).text(); code = bookmarkletCode(src); } catch { toast('Não consegui carregar o código do favorito. Verifique a conexão.', 'danger'); }
+    let code = '';
+    try { await loadPicker(); code = window.__estudioBookmarklet(); } catch { toast('Não consegui carregar o código do favorito. Verifique a conexão.', 'danger'); }
     const bm = $('#cap-bm');
-    if (code) bm.href = 'javascript:' + encodeURIComponent(code);
+    if (code) bm.href = code;
     bm.onclick = (e) => { e.preventDefault(); toast('Arraste este botão para a barra de favoritos. Para testar aqui, use “Experimentar nesta página”.'); };
     $('#cap-try').onclick = () => {
-      if (!window.__estudioPicker) { const s = document.createElement('script'); s.textContent = src; document.head.append(s); }
       window.__estudioPicker?.({ capture: window.__estudioCaptureDisplay, mode: 'favorito' });
     };
     $('#cap-copy').onclick = async () => {
-      try { await navigator.clipboard.writeText('javascript:' + encodeURIComponent(code)); toast('Código copiado: crie um favorito e cole no endereço (URL).', 'success'); } catch { toast('Não consegui copiar.', 'danger'); }
+      try { await navigator.clipboard.writeText(code); toast('Código copiado: crie um favorito e cole no endereço (URL).', 'success'); } catch { toast('Não consegui copiar.', 'danger'); }
     };
   },
 };
