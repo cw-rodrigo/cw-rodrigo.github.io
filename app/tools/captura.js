@@ -21,12 +21,12 @@ export default {
       <div class="row g-3">
         <div class="col-lg-6"><section class="card h-100"><div class="card-body">
           <h2 class="h5"><i class="bi bi-bookmark-star"></i> Favorito (sem instalar nada)</h2>
-          <p class="small">Arraste o botão abaixo para a barra de favoritos. Em qualquer site, clique nele, escolha o elemento e permita o compartilhamento de <strong>“Esta aba”</strong> quando o navegador perguntar.</p>
+          <p class="small">Arraste o botão abaixo para a barra de favoritos. Em qualquer site, clique nele, escolha o elemento e permita o compartilhamento quando o navegador perguntar.</p>
           <p><a class="btn btn-primary" id="cap-bm" href="#" draggable="true" title="Arraste para a barra de favoritos"><i class="bi bi-bounding-box-circles"></i> Capturar elemento</a></p>
           <p class="small"><strong>★ Lembrar um elemento:</strong> depois de capturar, a janela da prévia oferece um botão amarelo com o nome que você quiser. Arraste ele também para a barra de favoritos: na próxima vez, um clique nele já captura aquele mesmo elemento (e pode baixar ou copiar direto), sem precisar escolher.</p>
           <p class="small"><strong>Capturas guardadas:</strong> as últimas capturas (10, ou o número que você escolher) ficam guardadas. Marque <em>Só guardar</em> na barra para ir capturando vários elementos em sequência e, no fim, abra <em>Capturas</em> para escolher quais baixar (soltas ou num .zip), copiar para a área de transferência ou apagar. Todas vêm marcadas: se não desmarcar nenhuma, vão todas. No favorito, elas ficam guardadas por site; na extensão, juntas, de todos os sites.</p>
           <ul class="small text-body-secondary mb-3">
-            <li>Chrome e Edge no computador (usa o compartilhamento de tela do navegador; o recorte fica exato com a captura de região do Chrome).</li>
+            <li>Chrome e Edge: escolha compartilhar <strong>“Esta aba”</strong>. Firefox (que não compartilha só a aba): escolha a <strong>janela do Firefox</strong> ou a tela; a página é localizada na imagem por dois quadradinhos que piscam nos cantos por um instante.</li>
             <li>Pega só o que está visível na tela; para elementos maiores que a tela, use a extensão.</li>
             <li>Não aparece a barra de favoritos? <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>.</li>
           </ul>

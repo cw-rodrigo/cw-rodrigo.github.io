@@ -429,6 +429,7 @@
       hint.textContent = 'Capturando “' + tg.name + '”…';
       el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       show(el);
+      await new Promise((r) => setTimeout(r, 300));
       await shoot(el, true);
       hint.textContent = 'Passe o mouse e clique no elemento · ↑ pai · ↓ filho · Esc sai';
     }
@@ -505,46 +506,177 @@
    * por captura se pode compartilhar esta aba; o quadro é recortado nas coordenadas do elemento (lidas
    * depois que a barra de compartilhamento aparece). Só pega o que está visível na tela.
    */
-  window.__estudioCaptureDisplay = async function (el, info) {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('Este navegador não permite capturar a aba. Use o Chrome ou o Edge no computador, ou a extensão.');
+  /**
+   * Onde a página (a área visível) está dentro de um quadro capturado. Quando se compartilha uma janela
+   * ou a tela inteira (o Firefox não captura só a aba), o quadro tem também a barra de título, as abas,
+   * a barra de endereço e, na tela inteira, os painéis do sistema. Para achar a página com precisão, dois
+   * quadrados piscam (preto → branco) nos cantos da página; o que mudou entre os dois quadros são eles.
+   * diff(a, b): ImageData antes/depois; cw/ch: tamanho da área visível da página (CSS px).
+   * Devolve { x, y, sx, sy } (canto e escala em pixels do quadro) ou null.
+   */
+  function findViewport(a, b, cw, ch, M) {
+    const w = a.width, h = a.height, A = a.data, B = b.data;
+    const I = new Int32Array((w + 1) * (h + 1)); // imagem integral da máscara "mudou muito"
+    for (let y = 0; y < h; y++) {
+      let row = 0;
+      for (let x = 0; x < w; x++) {
+        const k = (y * w + x) * 4;
+        row += Math.abs(A[k] - B[k]) + Math.abs(A[k + 1] - B[k + 1]) + Math.abs(A[k + 2] - B[k + 2]) > 360 ? 1 : 0;
+        I[(y + 1) * (w + 1) + x + 1] = I[y * (w + 1) + x + 1] + row;
+      }
+    }
+    const changed = (x, y) => { const k = (y * w + x) * 4; return Math.abs(A[k] - B[k]) + Math.abs(A[k + 1] - B[k + 1]) + Math.abs(A[k + 2] - B[k + 2]) > 360; };
+    const box = (x, y, m) => I[(y + m) * (w + 1) + x + m] - I[y * (w + 1) + x + m] - I[(y + m) * (w + 1) + x] + I[y * (w + 1) + x];
+    /** Janela m×m quase toda "mudou": a de menor (ou maior) x+y. */
+    function corner(m, last) {
+      let best = null;
+      const full = m * m * 0.92;
+      for (let y = 0; y + m <= h; y++) for (let x = 0; x + m <= w; x++) {
+        if (box(x, y, m) < full) continue;
+        if (!best || (last ? x + y > best.x + best.y : x + y < best.x + best.y)) best = { x, y };
+      }
+      return best;
+    }
+    // 1) quadrado de cima à esquerda: acha, vai até as bordas dele e mede o tamanho
+    const m0 = Math.max(5, Math.min(20, Math.floor((M * w) / (cw * 4))));
+    const tl = corner(m0, false);
+    if (!tl) return null;
+    // a janela pode ter ficado um pouco para fora ou para dentro do quadrado: acerta as duas bordas
+    const cy0 = tl.y + (m0 >> 1), cx0 = tl.x + (m0 >> 1);
+    while (tl.x < cx0 && !changed(tl.x, cy0)) tl.x++;
+    while (tl.x > 0 && changed(tl.x - 1, cy0)) tl.x--;
+    while (tl.y < cy0 && !changed(cx0, tl.y)) tl.y++;
+    while (tl.y > 0 && changed(cx0, tl.y - 1)) tl.y--;
+    let tw = 0, th = 0;
+    while (tl.x + tw < w && changed(tl.x + tw, tl.y + (m0 >> 1))) tw++;
+    while (tl.y + th < h && changed(tl.x + (m0 >> 1), tl.y + th)) th++;
+    if (tw < 6 || Math.abs(tw - th) > Math.max(2, tw * 0.06)) return null; // não é o quadrado
+    // 2) o de baixo à direita tem que ter o mesmo tamanho (o relógio do painel, por exemplo, não serve)
+    const m1 = Math.max(5, Math.floor(Math.min(tw, th) * 0.85));
+    const brw = corner(m1, true);
+    if (!brw) return null;
+    let rx = brw.x + m1, ry = brw.y + m1;
+    const cy1 = brw.y + (m1 >> 1), cx1 = brw.x + (m1 >> 1);
+    while (rx > cx1 && !changed(rx - 1, cy1)) rx--;
+    while (rx < w && changed(rx, cy1)) rx++;
+    while (ry > cy1 && !changed(cx1, ry - 1)) ry--;
+    while (ry < h && changed(cx1, ry)) ry++;
+    let bw = 0, bh = 0;
+    while (rx - bw - 1 >= 0 && changed(rx - bw - 1, cy1)) bw++;
+    while (ry - bh - 1 >= 0 && changed(cx1, ry - bh - 1)) bh++;
+    if (Math.abs(bw - tw) > Math.max(2, tw * 0.06) || Math.abs(bh - th) > Math.max(2, th * 0.06)) return null;
+    const sx = (rx - tl.x) / cw, sy = (ry - tl.y) / ch;
+    if (!(sx > 0.2 && sy > 0.2) || Math.abs(sx - sy) / sx > 0.04 || Math.abs(tw / M - sx) / sx > 0.1) return null;
+    return { x: tl.x, y: tl.y, sx, sy };
+  }
+  window.__estudioFindViewport = findViewport; // para testes
+
+  /**
+   * Captura pelo compartilhamento de tela do próprio navegador (favorito). No Chrome e no Edge dá para
+   * compartilhar só esta aba (o quadro é a própria página). No Firefox, ou se você escolher uma janela ou
+   * a tela inteira, a página é localizada no quadro pelos quadrados que piscam nos cantos (findViewport).
+   * Só pega o que está visível na tela.
+   */
+  async function captureOnce(el, info, waitMs) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('Este navegador não permite capturar a tela. Use o Chrome, o Edge ou o Firefox no computador, ou a extensão.');
     el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     const p = info.padding || 0;
     const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: 'browser', frameRate: 30 }, audio: false, preferCurrentTab: true, selfBrowserSurface: 'include', surfaceSwitching: 'exclude', monitorTypeSurfaces: 'exclude' });
     const track = stream.getVideoTracks()[0];
+    const extra = [];
     try {
-      const surface = track.getSettings ? track.getSettings().displaySurface : 'browser';
+      const surface = (track.getSettings && track.getSettings().displaySurface) || '';
       const video = document.createElement('video');
       video.muted = true; video.playsInline = true; video.srcObject = stream;
-      // a captura da aba só manda quadro novo quando algo muda na tela: um ponto quase invisível
-      // (1 pixel, transparência de 1/255) pisca no canto enquanto esperamos o quadro certo
+      // a captura só manda quadro novo quando algo muda na tela: um ponto quase invisível
+      // (1 pixel, quase transparente) pisca no canto enquanto esperamos os quadros
       const nudge = document.createElement('div');
       css(nudge, { position: 'fixed', right: '0', bottom: '0', width: '1px', height: '1px', zIndex: Z, pointerEvents: 'none', background: 'rgba(0,0,0,0.002)' });
       document.documentElement.append(nudge);
+      extra.push(nudge);
       let k = 0, alive = true;
-      const blink = () => { if (!alive) return; nudge.style.background = (k++ & 1) ? 'rgba(0,0,0,0.002)' : 'rgba(0,0,0,0.003)'; requestAnimationFrame(blink); };
+      const blink = () => { if (!alive) return; nudge.style.background = (k++ & 1) ? 'rgba(0,0,0,0.01)' : 'rgba(0,0,0,0.03)'; requestAnimationFrame(blink); };
       requestAnimationFrame(blink);
       const nextFrame = () => new Promise((r) => { const t = setTimeout(r, 250); if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(() => { clearTimeout(t); r(); }); });
+      const settle = async (n) => { await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); for (let i = 0; i < n; i++) await nextFrame(); };
+      // quadros: pelo ImageCapture quando existe (Chrome/Edge: pega o quadro direto da trilha; o <video>
+      // fora da página às vezes não começa a tocar), senão pelo <video> (Firefox)
+      const ic = typeof window.ImageCapture === 'function' ? new window.ImageCapture(track) : null;
+      const timeout = (pr, ms, msg) => Promise.race([pr, new Promise((_, no) => setTimeout(() => no(new Error(msg)), ms))]);
+      const toCanvas = (src, w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d', { willReadFrequently: true }).drawImage(src, 0, 0); return c; };
+      let useVideo = !ic;
+      const grab = async () => {
+        if (!useVideo) {
+          try { const bmp = await timeout(ic.grabFrame(), 3000, 'sem quadro'); const c = toCanvas(bmp, bmp.width, bmp.height); bmp.close && bmp.close(); return c; } catch (e) { useVideo = true; }
+        }
+        return toCanvas(video, video.videoWidth, video.videoHeight);
+      };
+      let place = null, note = '';
       try {
-        await Promise.race([video.play(), new Promise((_, no) => setTimeout(() => no(new Error('a captura da aba não começou.')), 4000))]);
-        // a barra "compartilhando esta aba" pode mudar o tamanho da página: espera assentar
+        video.play().catch(() => {});
+        // primeiro quadro: o que chegar antes, pelo ImageCapture ou pelo <video>
+        await new Promise((ok, no) => {
+          let done = false;
+          const finish = (err) => { if (done) return; done = true; clearInterval(iv); if (err) no(err); else ok(); };
+          if (ic) ic.grabFrame().then((bmp) => { bmp.close && bmp.close(); finish(); }, () => { useVideo = true; });
+          const t0 = Date.now();
+          const iv = setInterval(() => {
+            if (video.readyState >= 2 && video.videoWidth) { if (!ic) useVideo = true; finish(); }
+            else if (Date.now() - t0 > waitMs) finish(Object.assign(new Error('a captura da tela não começou.'), { noFrames: true }));
+            else if (video.paused) video.play().catch(() => {});
+          }, 50);
+        });
+        // a barra "compartilhando…" pode mudar o tamanho da página: espera assentar
         await new Promise((r) => setTimeout(r, 400));
-        for (let i = 0; i < 3; i++) await nextFrame();
+        await settle(3);
+        if (surface !== 'browser') {
+          const M = 40, cw = document.documentElement.clientWidth, ch = document.documentElement.clientHeight;
+          const sq = (pos) => { const d = document.createElement('div'); css(d, { position: 'fixed', width: M + 'px', height: M + 'px', zIndex: Z, pointerEvents: 'none', background: '#000', ...pos }); document.documentElement.append(d); extra.push(d); return d; };
+          const a = sq({ left: '0', top: '0' }), b = sq({ right: '0', bottom: '0' });
+          await settle(3);
+          await grab();
+          const f1 = await grab();
+          a.style.background = b.style.background = '#fff';
+          await settle(3);
+          await grab();
+          const f2 = await grab();
+          a.remove(); b.remove();
+          const g1 = f1.getContext('2d').getImageData(0, 0, f1.width, f1.height), g2 = f2.getContext('2d').getImageData(0, 0, f2.width, f2.height);
+          place = findViewport(g1, g2, cw, ch, M);
+          if (!place) {
+            // sem achar os quadrados: estima pela diferença entre o tamanho da janela e o da página
+            const border = Math.max(0, (outerWidth - innerWidth) / 2), s = video.videoWidth / (surface === 'monitor' ? screen.width : outerWidth);
+            place = surface === 'monitor'
+              ? { x: (screenX + border) * s, y: (screenY + outerHeight - innerHeight - border) * s, sx: s, sy: s }
+              : { x: border * s, y: (outerHeight - innerHeight - border) * s, sx: s, sy: s };
+            note = 'Não consegui localizar a página com precisão na imagem compartilhada; o recorte pode ter saído um pouco deslocado. No Chrome ou no Edge, escolha compartilhar "Esta aba".';
+          }
+          await settle(3); // quadro final, já sem os quadrados
+        }
       } finally { alive = false; nudge.remove(); }
-      const vw = video.videoWidth;
+      if (!place) { const s = video.videoWidth / innerWidth; place = { x: 0, y: 0, sx: s, sy: s }; }
+      await grab();
+      const frame = await grab();
+      const r = el.getBoundingClientRect();
+      const W = document.documentElement.clientWidth || innerWidth, H = document.documentElement.clientHeight || innerHeight;
+      const x0 = Math.max(0, r.left - p), y0 = Math.max(0, r.top - p), x1 = Math.min(W, r.right + p), y1 = Math.min(H, r.bottom + p);
+      if (x1 <= x0 || y1 <= y0) throw new Error('O elemento não está visível na tela.');
+      if (!note && (r.top - p < 0 || r.bottom + p > H || r.left - p < 0 || r.right + p > W)) note = 'O elemento é maior que a tela: saiu só a parte visível. A extensão captura o elemento inteiro.';
       const c = document.createElement('canvas');
-      let note = '';
-      {
-        const r = el.getBoundingClientRect();
-        const s = vw / innerWidth;
-        const x0 = Math.max(0, r.left - p), y0 = Math.max(0, r.top - p), x1 = Math.min(innerWidth, r.right + p), y1 = Math.min(innerHeight, r.bottom + p);
-        if (x1 <= x0 || y1 <= y0) throw new Error('O elemento não está visível na tela.');
-        if (r.top - p < 0 || r.bottom + p > innerHeight || r.left - p < 0 || r.right + p > innerWidth) note = 'O elemento é maior que a tela: saiu só a parte visível. A extensão captura o elemento inteiro.';
-        c.width = Math.round((x1 - x0) * s); c.height = Math.round((y1 - y0) * s);
-        c.getContext('2d').drawImage(video, x0 * s, y0 * s, (x1 - x0) * s, (y1 - y0) * s, 0, 0, c.width, c.height);
-      }
-      if (surface && surface !== 'browser') note = 'Você compartilhou uma janela ou tela inteira, não a aba: o recorte pode ter saído deslocado. Na próxima, escolha "Esta aba".';
-      const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+      c.width = Math.max(1, Math.round((x1 - x0) * place.sx)); c.height = Math.max(1, Math.round((y1 - y0) * place.sy));
+      c.getContext('2d').drawImage(frame, place.x + x0 * place.sx, place.y + y0 * place.sy, (x1 - x0) * place.sx, (y1 - y0) * place.sy, 0, 0, c.width, c.height);
+      const blob = await new Promise((ok) => c.toBlob(ok, 'image/png'));
       return { blob, note };
-    } finally { stream.getTracks().forEach((t) => t.stop()); }
+    } finally {
+      extra.forEach((d) => d.remove());
+      stream.getTracks().forEach((t) => t.stop());
+    }
+  }
+  window.__estudioCaptureDisplay = async function (el, info) {
+    // às vezes a captura começa sem mandar quadros (logo depois de abrir a página): tenta mais uma vez
+    try { return await captureOnce(el, info, 2500); } catch (e) {
+      if (e && e.noFrames && (!navigator.userActivation || navigator.userActivation.isActive)) return captureOnce(el, info, 6000);
+      throw e;
+    }
   };
 })();
